@@ -6,6 +6,8 @@ RP2040-DSP is a fully modular 24-bit stereo audio effects processor built on the
 
 The firmware architecture is modular, supporting multiple effects that can be stacked and configured flexibly.
 
+<img width="2688" height="1044" alt="V1 0_Enclosure_Render" src="https://github.com/user-attachments/assets/a6f48c74-d24e-40b1-9adf-d9f274e2988c" />
+
 ---
 
 ## 🎛️ Features & Functionality
