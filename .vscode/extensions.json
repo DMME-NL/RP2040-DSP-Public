@@ -1,0 +1,13 @@
+{
+    "recommendations": [
+        "paulober.pico-w-go",
+        "marus25.cortex-debug",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-python.python",
+        "raspberry-pi.raspberry-pi-pico",
+        "ms-python.vscode-pylance",
+        "visualstudioexptteam.vscodeintellicode",
+        "ms-vscode.vscode-serial-monitor"
+    ]
+}
