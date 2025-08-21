@@ -1,0 +1,132 @@
+{
+  "Header": {
+    "GenerationSoftware": {
+      "Vendor": "KiCad",
+      "Application": "Pcbnew",
+      "Version": "9.0.3"
+    },
+    "CreationDate": "2025-08-21T10:37:57+02:00"
+  },
+  "GeneralSpecs": {
+    "ProjectId": {
+      "Name": "RP2040_DSP",
+      "GUID": "52503230-3430-45f4-9453-502e6b696361",
+      "Revision": "V1.1"
+    },
+    "Size": {
+      "X": 168.75,
+      "Y": 136.65
+    },
+    "LayerNumber": 2,
+    "BoardThickness": 1.2,
+    "Finish": "ENIG",
+    "ImpedanceControlled": true
+  },
+  "DesignRules": [
+    {
+      "Layers": "Outer",
+      "PadToPad": 0.15,
+      "PadToTrack": 0.15,
+      "TrackToTrack": 0.15,
+      "MinLineWidth": 0.32,
+      "TrackToRegion": 0.15,
+      "RegionToRegion": 0.15
+    }
+  ],
+  "FilesAttributes": [
+    {
+      "Path": "RP2040_DSP-Top Layer.gbr",
+      "FileFunction": "Copper,L1,Top",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Bottom Layer.gbr",
+      "FileFunction": "Copper,L2,Bot",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Top Paste.gbr",
+      "FileFunction": "SolderPaste,Top",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Bottom Paste.gbr",
+      "FileFunction": "SolderPaste,Bot",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Top Silkscreen.gbr",
+      "FileFunction": "Legend,Top",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Bottom Silkscreen.gbr",
+      "FileFunction": "Legend,Bot",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "RP2040_DSP-Top Soldermask.gbr",
+      "FileFunction": "SolderMask,Top",
+      "FilePolarity": "Negative"
+    },
+    {
+      "Path": "RP2040_DSP-Bottom Soldermask.gbr",
+      "FileFunction": "SolderMask,Bot",
+      "FilePolarity": "Negative"
+    },
+    {
+      "Path": "RP2040_DSP-Edge_Cuts.gbr",
+      "FileFunction": "Profile",
+      "FilePolarity": "Positive"
+    }
+  ],
+  "MaterialStackup": [
+    {
+      "Type": "Legend",
+      "Name": "Top Silk Screen"
+    },
+    {
+      "Type": "SolderPaste",
+      "Name": "Top Solder Paste"
+    },
+    {
+      "Type": "SolderMask",
+      "Color": "Green",
+      "Thickness": 0.01,
+      "Name": "Top Solder Mask"
+    },
+    {
+      "Type": "Copper",
+      "Thickness": 0.035,
+      "Name": "Top Layer"
+    },
+    {
+      "Type": "Dielectric",
+      "Color": "R109G116B75",
+      "Thickness": 1.11,
+      "Material": "RO4350B",
+      "DielectricConstant": "4.2",
+      "Name": "Top Layer/Bottom Layer",
+      "Notes": "Type: dielectric layer 1 (from Top Layer to Bottom Layer)"
+    },
+    {
+      "Type": "Copper",
+      "Thickness": 0.035,
+      "Name": "Bottom Layer"
+    },
+    {
+      "Type": "SolderMask",
+      "Color": "Green",
+      "Thickness": 0.01,
+      "Name": "Bottom Solder Mask"
+    },
+    {
+      "Type": "SolderPaste",
+      "Name": "Bottom Solder Paste"
+    },
+    {
+      "Type": "Legend",
+      "Name": "Bottom Silk Screen"
+    }
+  ]
+}

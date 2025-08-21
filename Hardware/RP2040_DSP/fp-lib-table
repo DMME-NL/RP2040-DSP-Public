@@ -1,6 +1,0 @@
-(fp_lib_table
-  (version 7)
-  (lib (name "Audio_Modules")(type "KiCad")(uri "${KIPRJMOD}/Audio_Modules.pretty")(options "")(descr ""))
-  (lib (name "DSP_PROJECT")(type "KiCad")(uri "${KIPRJMOD}/DSP_PROJECT.pretty")(options "")(descr ""))
-  (lib (name "RP2040_DSP_Project_Library")(type "KiCad")(uri "${KIPRJMOD}/RP2040_DSP_Project_Library.pretty")(options "")(descr ""))
-)
