@@ -18,6 +18,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+
 // UI state enumeration
 typedef enum {
     UI_HOME,
@@ -28,7 +29,8 @@ typedef enum {
     UI_EFFECT_LIST,
     UI_DELAY_MODE_MENU,
     UI_STEREO_MODE_MENU,
-    UI_CHORUS_MODE_MENU
+    UI_CHORUS_MODE_MENU,
+    UI_PREAMP_SELECTION
 } UIState;
 
 // VU state enumeration
@@ -37,6 +39,22 @@ typedef enum {
     VU_OUTPUT,
     VU_GAIN
 } VUmeterState;
+
+// preamp options 
+const char* preamp_names[] = {
+    "FENDER",
+    "VOX",
+    "MARSHALL",
+    "SOLDANO"
+};
+
+typedef enum {
+    FENDER,
+    VOX_AC,
+    MARSHALL,
+    SOLDANO
+} preamp;
+
 
 // stereo modes
 const char* stereo_mode_names[] = {
@@ -77,11 +95,13 @@ const char* chorus_mode_names[] = {
     "1-MONO"
 };
 
-#define NUM_DELAY_MODES (sizeof(delay_mode_names) / sizeof(delay_mode_names[0]))
+#define NUM_DELAY_MODES  (sizeof(delay_mode_names) / sizeof(delay_mode_names[0]))
 #define NUM_STEREO_MODES (sizeof(stereo_mode_names) / sizeof(stereo_mode_names[0]))
 #define NUM_CHORUS_MODES (sizeof(chorus_mode_names) / sizeof(chorus_mode_names[0]))
+#define NUM_PREAMPS      (sizeof(preamp_names) / sizeof(preamp_names[0]))
 
 static DelayMode selected_delay_mode = DELAY_MODE_PARALLEL;
+static preamp selected_preamp_style  = MARSHALL;
 static FXmode selected_chorus_mode   = STEREO_3;
 static FXmode selected_phaser_mode   = FX_STEREO;
 static FXmode selected_flanger_mode  = FX_STEREO;
@@ -166,8 +186,9 @@ int effectListIndex = 0;                 // Hovered item in effect list
 int delay_mode_menu_index = 0;           // Selected delay mode in menu
 int chorus_mode_menu_index = 0;          // Selected chorus mode in menu
 int stereo_mode_menu_index = 0;          // Selected stereo mode in menu
+int preamp_select_menu_index = 0;        // Selected preamp in menu
 bool param_selected = true;              // Tracks if one of the 3 numbers is selected
-uint8_t selectedEffects[3] = {2, 10, 11}; // Default effects
+uint8_t selectedEffects[3] = {9, 2, 10}; // Default effects
 
 // Global variable to track the current UI state
 UIState currentUI = UI_HOME;
@@ -362,6 +383,10 @@ void drawStereoVUMeters(uint32_t leftValue, uint32_t rightValue, const char* lab
 // Draw the home screen with centered effect name and parameter slots
 void drawHomeScreen(uint16_t hoveredIndex, bool effectJustChanged, uint8_t currentEffectSlot) {
     const char* effectName = allEffects[selectedEffects[currentEffectSlot]];
+    // Overwrite with preamp name when selected
+    if(selectedEffects[currentEffectSlot] == PREAMP_EFFECT_INDEX){
+        effectName = preamp_names[selected_preamp_style];
+    }
 
     char buf[16];
     SetFont(&Font8x8);
@@ -588,6 +613,39 @@ void drawStereoModeMenu(int selectedIndex) {
             } else if (effectListIndex == VIBR_EFFECT_INDEX) {
                 selected_vibrato_mode = (FXmode)i;
             }
+        } else {
+            SSD1306_DrawString(2, y + 1, name, false);
+        }
+    }
+}
+
+// ============================================================================
+// === UI - Preamp selection screen ===========================================
+// ============================================================================
+
+void drawPreampSelectMenu(int selectedIndex) {  // [NEW]
+    static int last_selected = -1;
+
+    if (last_selected == -1) {
+        selectedIndex = selected_preamp_style; // restore cursor on first draw
+        last_selected = selectedIndex;
+    }
+
+    SSD1306_FillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, false);
+
+    drawMenuTitleBar(allEffects[effectListIndex]);
+
+    const int rowH = 10;
+    const int startY = 12;
+
+    for (int i = 0; i < NUM_PREAMPS; ++i) {
+        int y = startY + i * rowH;
+        const char* name = preamp_names[i];
+
+        if (i == selectedIndex) {
+            selected_preamp_style = (preamp)i;
+            SSD1306_FillRect(0, y, 128, rowH, 1);
+            SSD1306_DrawString(2, y + 1, name, true);
         } else {
             SSD1306_DrawString(2, y + 1, name, false);
         }

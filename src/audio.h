@@ -18,6 +18,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
+
 // ============================================================================
 // === Constants and Macros ===================================================
 // ============================================================================
@@ -43,6 +44,10 @@
 
 // --- Gain constants (Q8.24) ---
 #define MIN_GAIN_Q24    0x00000000  // 0.0
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 // ============================================================================
 // === Global Variables =======================================================
@@ -199,6 +204,37 @@ static inline uint32_t lfo_q16_shape(uint32_t phase, uint8_t mode) {
     // Default fallback (triangle)
     return folded;
 }
+
+// =====================================================================================
+//                 ANALYTIC MAPPINGS (called on parameter load)
+// =====================================================================================
+
+static inline float cathode_bypass_factor(float Rk, float Ck, float freq){
+    if (Ck <= 0.0f) return 0.0f;
+    float Xc = 1.0f / (2.0f*(float)M_PI*freq*Ck);
+    float alpha = Xc / (Rk + Xc); // fraction NOT bypassed
+    return 1.0f - alpha;          // 0..1 bypass fraction
+}
+
+static inline float triode_stage_gain_mag(float mu, float rp, float RL, float Rk, float bypass_frac){
+    float Reff = Rk * (1.0f - bypass_frac);
+    float denom = rp + RL + (mu + 1.0f)*Reff;
+    if (denom <= 1.0f) denom = 1.0f;
+    return (mu * RL) / denom;
+}
+
+static inline void derive_nonlinear_from_bias(
+    float mu, float rp, float RL, float Rk, float bypass_frac,
+    float *shape_out, float *asym_out
+){
+    float Reff = Rk * (1.0f - bypass_frac);
+    float cold = Reff / (Reff + RL/5.0f);
+    // VOX = hotter bias → softer knee & less asym than a Marshall cold clipper
+    float shape = 0.25f + 0.35f * cold;     // ~0.25..0.60
+    float asym  = 1.10f + 0.45f * cold;     // ~1.10..1.55
+    *shape_out = shape; *asym_out = asym;
+}
+
 // ============================================================================
 // === Audio Effect Functions ================================================
 // ============================================================================
@@ -212,8 +248,12 @@ static inline uint32_t lfo_q16_shape(uint32_t phase, uint8_t mode) {
 #include <fuzz.h>
 #include <overdrive.h>
 #include <phaser.h>
-#include <preamp.h>
 #include <reverb.h>
 #include <speaker_sim.h>
 #include <tremolo.h>
 #include <vibrato.h>
+
+#include <preamp_marshall.h>
+#include <preamp_fender.h>
+#include <preamp_vox.h>
+#include <preamp_soldano.h>

@@ -17,7 +17,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <stdio.h>
+ #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -33,7 +33,6 @@
 // Include hardware headers
 #include "hardware/dma.h"
 #include "hardware/clocks.h"
-
 #include "hardware/structs/timer.h"
 
 // SSD1306 OLED display headers
@@ -75,6 +74,10 @@
 // When no hardware is connected, we can use the default LED state
 #define DEFAULT_LED_STATE   0x00  // Default LED / EFFECT state 
 
+// Process gain and compression in stereo?
+// This will cause the loss of stereo channels when using other effects in front!
+#define STEREO  false 
+
 // Alarm interval in microseconds
 #define DEBUG_INTERVAL_US   1000000  // 1.0 second
 #define CPU_INTERVAL_US      500000  // 0.5 second
@@ -106,6 +109,23 @@ static uint64_t last_print_time_us = 0;
 #include "var_conversion.h"
 #include "audio.h"
 
+
+// Update on single-pot change for the selected preamp
+static inline void update_preamp_from_pots(int changed_pot){
+    if (changed_pot < 0 || changed_pot > 5) return;
+    storedPotValue[PREAMP_EFFECT_INDEX][changed_pot] = pot_value[changed_pot];
+    switch (selected_preamp_style) {
+        case FENDER:
+            load_fender_params_from_memory();   break;
+        case VOX_AC:
+            load_vox_params_from_memory();      break;
+        case MARSHALL:
+            load_marshall_params_from_memory(); break;
+        case SOLDANO:
+            load_slo_params_from_memory(); break;
+    }
+}
+
 // ============================================================================
 // === POT changes and effects ================================================
 // ============================================================================
@@ -119,10 +139,10 @@ static EffectUpdateFn effect_param_updaters[NUM_EFFECTS] = {
     [DS_EFFECT_INDEX]       = update_distortion_params_from_pots,
     [EQ_EFFECT_INDEX]       = update_eq_params_from_pots,
     [FLNG_EFFECT_INDEX]     = update_flanger_params_from_pots,
-    [FZ_EFFECT_INDEX]        = update_fuzz_params_from_pots,
+    [FZ_EFFECT_INDEX]       = update_fuzz_params_from_pots,
     [OD_EFFECT_INDEX]       = update_overdrive_params_from_pots,
     [PHSR_EFFECT_INDEX]     = update_phaser_params_from_pots,
-    [PREAMP_EFFECT_INDEX]   = NULL,
+    [PREAMP_EFFECT_INDEX]   = update_preamp_from_pots,
     [REVB_EFFECT_INDEX]     = update_reverb_params_from_pots,
     [CAB_SIM_EFFECT_INDEX]  = update_speaker_sim_params_from_pots,
     [TREM_EFFECT_INDEX]     = update_tremolo_params_from_pots,
@@ -225,37 +245,47 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
             chorus_process_block(in_l, in_r, frames, selected_chorus_mode); break;
 
         case COMP_EFFECT_INDEX:
-            compressor_process_block(in_l, in_r, frames); break;
+            compressor_process_block(in_l, in_r, frames, STEREO); break;
 
         case DELAY_EFFECT_INDEX:
             delay_process_block(in_l, in_r, frames, selected_delay_mode); break;
 
         case DS_EFFECT_INDEX:
-            distortion_process_block(in_l, in_r, frames); break;
+            distortion_process_block(in_l, in_r, frames, STEREO); break;
 
         case EQ_EFFECT_INDEX:
-            eq_process_block(in_l, in_r, frames); break;
+            eq_process_block(in_l, in_r, frames, STEREO); break;
 
         case FLNG_EFFECT_INDEX:
             flanger_process_block(in_l, in_r, frames, selected_flanger_mode); break;
 
         case FZ_EFFECT_INDEX:
-            fuzz_process_block(in_l, in_r, frames); break;
+            fuzz_process_block(in_l, in_r, frames, STEREO); break;
 
         case OD_EFFECT_INDEX:
-            overdrive_process_block(in_l, in_r, frames); break;
+            overdrive_process_block(in_l, in_r, frames, STEREO); break;
 
         case PHSR_EFFECT_INDEX:
             phaser_process_block(in_l, in_r, frames, selected_phaser_mode); break;
 
-        case PREAMP_EFFECT_INDEX:
-            /* Not implemented */ break;
+        case PREAMP_EFFECT_INDEX:   // [NEW]
+            // Check waht preamp processing is required
+            switch (selected_preamp_style) {
+                case FENDER:
+                    fender_preamp_process_block(in_l, in_r, frames, STEREO);    break;
+                case VOX_AC:
+                    vox_preamp_process_block(in_l, in_r, frames, STEREO);       break;
+                case MARSHALL:
+                    marshall_preamp_process_block(in_l, in_r, frames, STEREO);  break;
+                case SOLDANO:
+                    slo_preamp_process_block(in_l, in_r, frames, STEREO);   break;
+            } break;
 
         case REVB_EFFECT_INDEX:
             reverb_process_block(in_l, in_r, frames); break;
 
         case CAB_SIM_EFFECT_INDEX:
-            speaker_sim_process_block(in_l, in_r, frames); break;
+            speaker_sim_process_block(in_l, in_r, frames, STEREO); break;
 
         case TREM_EFFECT_INDEX:
             tremolo_process_block(in_l, in_r, frames, selected_tremolo_mode); break;
@@ -283,17 +313,14 @@ static void process_audio(const int32_t* input, int32_t* output, size_t num_fram
     // Start CPU counter
     if (SHOW_CPU) cpu0_task_start();
 
-    // Removed and defined above
-    // static int32_t buffer_l[AUDIO_BUFFER_FRAMES];
-    // static int32_t buffer_r[AUDIO_BUFFER_FRAMES];
-
-    local_peak_left = 0;
+    local_peak_left  = 0;
     local_peak_right = 0;
 
     // De-interleave input
     for (size_t i = 0; i < num_frames; i++) {
-        buffer_r[i] = input[i * 2];
-        buffer_l[i] = input[i * 2 + 1];
+        buffer_l[i] = input[i * 2 + 1];             
+        if(!STEREO){ buffer_r[i] = buffer_l[i];  } // Input = Mono  
+        else{        buffer_r[i] = input[i * 2]; } // Input = Stereo 
     }
 
     // Check the max inpu value to be shown in the VU meter
@@ -477,6 +504,12 @@ void handleButtonPress() {
                 encoder_position = stereo_mode_menu_index;
                 currentUI = UI_STEREO_MODE_MENU;
             } 
+            // Show menu for preamp selection [NEW]
+            else if (effectListIndex == PREAMP_EFFECT_INDEX){
+                preamp_select_menu_index = selected_preamp_style;
+                encoder_position = preamp_select_menu_index;
+                currentUI = UI_PREAMP_SELECTION;
+            } 
             // Any other effect just returns to home
             else {
                 encoder_position = 1;
@@ -485,7 +518,10 @@ void handleButtonPress() {
         }
     }
     // Set the selected delay / chorus / stereo mode and return to home
-    else if (currentUI == UI_DELAY_MODE_MENU || UI_CHORUS_MODE_MENU || UI_STEREO_MODE_MENU) {
+    else if (currentUI == UI_DELAY_MODE_MENU  ||
+             currentUI == UI_CHORUS_MODE_MENU ||
+             currentUI == UI_STEREO_MODE_MENU ||
+             currentUI == UI_PREAMP_SELECTION) {
         // Changin the mode hapens in the draw function
         // That way we can update the selected mode in real time
         encoder_position = 1;  // reset to effect name
@@ -559,6 +595,15 @@ void drawUI(int changed_pot_index) {
 
             chorus_mode_menu_index = encoder_position;
             drawChorusModeMenu(chorus_mode_menu_index);
+            break;
+
+        case UI_PREAMP_SELECTION: // [NEW]
+            // Wrap encoder
+            if (encoder_position < 0) encoder_position = NUM_PREAMPS - 1;
+            if (encoder_position >= NUM_PREAMPS) encoder_position = 0;
+
+            preamp_select_menu_index = encoder_position;
+            drawPreampSelectMenu(preamp_select_menu_index);
             break;
 
         case UI_STEREO_MODE_MENU:
@@ -673,18 +718,37 @@ float get_flash_used_percent(void) {
 
 // === EFFECTS status ===
 void print_enabled_effects(void) {
-    printf("Enabled effects:\n");
+    printf("Enabled effects:");
 
     for (int slot = 0; slot < 3; slot++) {
         if (led_state & (1 << slot)) {
             int effect_index = selectedEffects[slot];
             if (effect_index >= 0 && effect_index < NUM_EFFECTS) {
-                printf(" - Slot %d: %s\n", slot + 1, allEffects[effect_index]);
+                printf("\n - Slot %d: %s ", slot + 1, allEffects[effect_index]);
+
+                // Print the effects mode as well 
+                switch (effect_index) {
+                    case CHRS_EFFECT_INDEX:
+                        printf("- %s", chorus_mode_names[selected_chorus_mode]);   break;
+                    case DELAY_EFFECT_INDEX:
+                        printf("- %s", delay_mode_names[selected_delay_mode]);     break;
+                    case FLNG_EFFECT_INDEX:
+                        printf("- %s", stereo_mode_names[selected_flanger_mode]);  break;
+                    case PHSR_EFFECT_INDEX:
+                        printf("- %s", stereo_mode_names[selected_phaser_mode]);   break;                
+                    case PREAMP_EFFECT_INDEX:
+                        printf("- %s", preamp_names[selected_preamp_style]);       break;
+                    case TREM_EFFECT_INDEX:
+                        printf("- %s", stereo_mode_names[selected_tremolo_mode]);  break;
+                    case VIBR_EFFECT_INDEX:
+                        printf("- %s", stereo_mode_names[selected_vibrato_mode]);  break;
+                }
             } else {
-                printf(" - Slot %d: (Invalid effect index: %d)\n", slot + 1, effect_index);
+                printf("\n - Slot %d: (Invalid effect index: %d)", slot + 1, effect_index);
             }
         }
     }
+    printf("\n"); // New Line
 }
 
 // ============================================================================
@@ -779,12 +843,16 @@ void second_thread() {
     load_fuzz_parms_from_memory();
     load_overdrive_parms_from_memory();
     load_phaser_parms_from_memory();
-    // load_preamp_parms_from_memory();
     load_reverb_parms_from_memory();
     load_speaker_sim_parms_from_memory();
     load_tremolo_parms_from_memory();
     load_vibrato_parms_from_memory();
     
+    load_fender_params_from_memory();
+    load_vox_params_from_memory();
+    load_marshall_params_from_memory();
+    load_slo_params_from_memory();   
+
     /*
         TODO - ADD NEW EFFECTS HERE
     */

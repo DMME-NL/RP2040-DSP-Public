@@ -17,7 +17,6 @@
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
  */
-
 #ifndef DISTORTION_H
 #define DISTORTION_H
 
@@ -106,9 +105,10 @@ static inline __attribute__((always_inline)) int32_t process_ds_channel(
 }
 
 // --- Process stereo sample ---
-static inline void process_audio_distortion_sample(int32_t* inout_l, int32_t* inout_r) {
+static inline void process_audio_distortion_sample(int32_t* inout_l, int32_t* inout_r, bool stereo) {
     *inout_l = process_ds_channel(*inout_l, &ds_low_state_l, &ds_mid_lp_state_l, &ds_mid_hp_state_l, &ds_high_state_l, &ds_lpf_state_l, &ds_hpf_state_l);
-    *inout_r = process_ds_channel(*inout_r, &ds_low_state_r, &ds_mid_lp_state_r, &ds_mid_hp_state_r, &ds_high_state_r, &ds_lpf_state_r, &ds_hpf_state_r);
+    if(!stereo){    *inout_r = *inout_l; } // Process MONO
+    else{           *inout_r = process_ds_channel(*inout_r, &ds_low_state_r, &ds_mid_lp_state_r, &ds_mid_hp_state_r, &ds_high_state_r, &ds_lpf_state_r, &ds_hpf_state_r);}
 }
 
 // --- Load parameters ---
@@ -152,9 +152,9 @@ static inline void update_distortion_params_from_pots(int changed_pot) {
     load_distortion_parms_from_memory();
 }
 
-void distortion_process_block(int32_t* in_l, int32_t* in_r, size_t frames) {
+void distortion_process_block(int32_t* in_l, int32_t* in_r, size_t frames, bool stereo) {
     for (size_t i = 0; i < frames; i++) {
-        process_audio_distortion_sample(&in_l[i], &in_r[i]);
+        process_audio_distortion_sample(&in_l[i], &in_r[i], stereo);
     }
 }
 

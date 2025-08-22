@@ -17,7 +17,6 @@
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
  */
-
 #ifndef SPEAKER_SIM_H
 #define SPEAKER_SIM_H
 
@@ -65,14 +64,15 @@ static inline int32_t process_speaker_channel(int32_t x, int ch) {
     return clamp24(qmul(y, cab_output_gain_q24));
 }
 
-static inline void speaker_sim_process_sample(int32_t* inout_l, int32_t* inout_r) {
+static inline void speaker_sim_process_sample(int32_t* inout_l, int32_t* inout_r, bool stereo) {
     *inout_l = process_speaker_channel(*inout_l, 0);
-    *inout_r = process_speaker_channel(*inout_r, 1);
+    if(!stereo){    *inout_r = *inout_l; } // Process MONO
+    else{           *inout_r = process_speaker_channel(*inout_r, 1);    }
 }
 
-void speaker_sim_process_block(int32_t* in_l, int32_t* in_r, size_t frames) {
+void speaker_sim_process_block(int32_t* in_l, int32_t* in_r, size_t frames, bool stereo) {
     for (size_t i = 0; i < frames; ++i)
-        speaker_sim_process_sample(&in_l[i], &in_r[i]);
+        speaker_sim_process_sample(&in_l[i], &in_r[i], stereo);
 }
 
 // === Initialization ===

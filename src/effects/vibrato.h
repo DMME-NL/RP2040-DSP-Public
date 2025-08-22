@@ -17,7 +17,6 @@
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
  */
-
 #ifndef VIBRATO_H
 #define VIBRATO_H
 

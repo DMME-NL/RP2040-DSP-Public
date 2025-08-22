@@ -17,9 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
- */
-
-#ifndef OVERDRIVE_H 
+ */#ifndef OVERDRIVE_H 
 #define OVERDRIVE_H
 
 #include <stdint.h>
@@ -104,9 +102,10 @@ static inline __attribute__((always_inline)) int32_t process_od_channel(
 }
 
 // --- Process stereo sample ---
-static inline void process_audio_overdrive_sample(int32_t* inout_l, int32_t* inout_r) {
+static inline void process_audio_overdrive_sample(int32_t* inout_l, int32_t* inout_r, bool stereo) {
     *inout_l = process_od_channel(*inout_l, &od_low_state_l, &od_mid_lp_state_l, &od_mid_hp_state_l, &od_high_state_l, &od_lpf_state_l, &od_hpf_state_l);
-    *inout_r = process_od_channel(*inout_r, &od_low_state_r, &od_mid_lp_state_r, &od_mid_hp_state_r, &od_high_state_r, &od_lpf_state_r, &od_hpf_state_r);
+    if(!stereo){    *inout_r = *inout_l; } // Process MONO
+    else{           *inout_r = process_od_channel(*inout_r, &od_low_state_r, &od_mid_lp_state_r, &od_mid_hp_state_r, &od_high_state_r, &od_lpf_state_r, &od_hpf_state_r);   }
 }
 
 // --- Load parameters ---
@@ -150,9 +149,9 @@ static inline void update_overdrive_params_from_pots(int changed_pot) {
     load_overdrive_parms_from_memory();
 }
 
-void overdrive_process_block(int32_t* in_l, int32_t* in_r, size_t frames) {
+void overdrive_process_block(int32_t* in_l, int32_t* in_r, size_t frames, bool stereo) {
     for (size_t i = 0; i < frames; i++) {
-        process_audio_overdrive_sample(&in_l[i], &in_r[i]);
+        process_audio_overdrive_sample(&in_l[i], &in_r[i], stereo);
     }
 }
 

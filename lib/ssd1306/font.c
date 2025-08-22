@@ -18,7 +18,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
- #include "font.h"
+#include "font.h"
 #include "font5x8.h"
 #include "font6x8.h"
 #include "font8x8.h"

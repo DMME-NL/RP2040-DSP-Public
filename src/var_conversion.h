@@ -98,6 +98,23 @@ static inline int32_t db_to_q24(float db) {
     return (int32_t)(lin * (1 << 24));
 }
 
+// One-pole alpha from Hz (run only on param updates)
+static inline int32_t alpha_from_hz(float fc_hz) {
+    if (fc_hz <= 0.0f) return 0;
+    float a = 1.0f - expf(-2.0f * (float)M_PI * fc_hz / (float)SAMPLE_RATE);
+    if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
+    return float_to_q24(a);
+}
+
+static inline float rc_fc(float R_ohm, float C_f){
+    return 1.0f / (2.0f*(float)M_PI*R_ohm*C_f);
+}
+
+static inline int32_t alpha_from_rc(float R_ohm, float C_f){
+    extern int32_t alpha_from_hz(float fc_hz);
+    return alpha_from_hz(rc_fc(R_ohm, C_f));
+}
+
 // ============================================================================
 // === Math & Conversion  =====================================================
 // ============================================================================
@@ -121,6 +138,10 @@ static inline int32_t fast_log10_q24(int32_t x) {
 
 static inline int32_t qmul(int32_t a, int32_t b) {
     return (int32_t)(((int64_t)a * b) >> 24);
+}
+
+static inline __attribute__((always_inline)) int32_t qmul_q24_64(int32_t a_q24, int32_t b_q24){
+    return (int32_t)(((int64_t)a_q24 * (int64_t)b_q24) >> 24);
 }
 
 // === Lerp and multiply helpers ===

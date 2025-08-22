@@ -17,7 +17,6 @@
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
  */
-
 #ifndef CHORUS_H
 #define CHORUS_H
 
@@ -54,7 +53,6 @@ static uint32_t chorus_lpf_coef_q16 = 0x4000; // default
 
 // one global flag the UI can poke (no header needed)
 volatile int8_t ui_chorus_mode_pending = -1;  // -1 = no change
-
 static ChorusMode chorus_current_mode = STEREO_3;
 
 // Call this exactly when the user changes the chorus mode.

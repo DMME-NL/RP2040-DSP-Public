@@ -17,7 +17,6 @@
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
  */
-
 #ifndef COMPRESSOR_H
 #define COMPRESSOR_H
 
@@ -112,7 +111,7 @@ static inline void update_compressor_params_from_pots(int changed_pot) {
     load_compressor_parms_from_memory();
 }
 
-static inline void process_audio_compressor_sample(int32_t* inout_l, int32_t* inout_r) {
+static inline void process_audio_compressor_sample(int32_t* inout_l, int32_t* inout_r, bool stereo) {
     for (int ch = 0; ch < 2; ++ch) {
         int32_t* x = (ch == 0) ? inout_l : inout_r;
         int32_t abs_x = (*x < 0) ? -*x : *x;
@@ -132,14 +131,19 @@ static inline void process_audio_compressor_sample(int32_t* inout_l, int32_t* in
     y_l = (y_l * comp_gain_q24) >> 24;
     *inout_l = clamp24((int32_t)y_l);
 
-    int64_t y_r = ((int64_t)(*inout_r) * gain_r_q24) >> 24;
-    y_r = (y_r * comp_gain_q24) >> 24;
-    *inout_r = clamp24((int32_t)y_r);
+    if(!stereo){    
+        *inout_r = *inout_l;    // Process MONO 
+    } 
+    else{          
+        int64_t y_r = ((int64_t)(*inout_r) * gain_r_q24) >> 24;
+        y_r = (y_r * comp_gain_q24) >> 24;
+        *inout_r = clamp24((int32_t)y_r);
+    }
 }
 
-void compressor_process_block(int32_t* in_l, int32_t* in_r, size_t frames) {
+void compressor_process_block(int32_t* in_l, int32_t* in_r, size_t frames, bool stereo) {
     for (size_t i = 0; i < frames; i++) {
-        process_audio_compressor_sample(&in_l[i], &in_r[i]);
+        process_audio_compressor_sample(&in_l[i], &in_r[i], stereo);
 
         // Update gain every N samples to reduce CPU
         static int counter = 0;
