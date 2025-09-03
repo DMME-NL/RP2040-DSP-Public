@@ -24,10 +24,6 @@
 #include <string.h>
 
 // === Fixed-point constants ===
-#define Q24_ONE 0x01000000
-#define Q15_ONE 0x00008000
-#define Q16_ONE 0x00010000
-
 #define NUM_PHASER_STAGES 4
 
 // === Depth limits ===

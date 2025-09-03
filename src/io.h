@@ -90,13 +90,6 @@ static bool initialized = false;
 int last_changed_pot = -1;
 
 // ============================================================================
-// === Timers and Debounce ====================================================
-// ============================================================================
-
-// Global tap interval in milliseconds, initially 0 (no tempo)
-volatile uint32_t tap_interval_ms = 500;
-
-// ============================================================================
 // === I2C Initialization =====================================================
 // ============================================================================
 
@@ -127,7 +120,7 @@ void initialize_gpio_expander(void) {
     // Make sure global state variables are initialized accordingly
 
     // Initialization: all LEDs OFF (bits set to 1)
-    led_state = DEFAULT_LED_STATE;
+    led_state = default_led_state;
     lfo_led_state = true;  // If needed
 
     // Turn off all LEDs on expander
@@ -317,30 +310,6 @@ void update_tap_blink(void) {
     }
 }
 
-// Call this every time the tap tempo footswitch (footswitch 4) is pressed:
-void on_tap_press(void) {
-    absolute_time_t now = get_absolute_time();
-
-    if (tap_started) {
-        uint32_t interval = to_ms_since_boot(now) - to_ms_since_boot(last_tap_time);
-        if (interval > 50 && interval < 2000) {  // Ignore too-fast or too-slow taps
-            tap_interval_ms = interval;
-        }
-    } else {
-        tap_started = true;
-    }
-
-    last_tap_time = now;
-
-    // Reset blinking with new tempo
-    next_blink_time = delayed_by_ms(now, tap_interval_ms / 2);
-    blink_state = true;
-    led_state |= (1 << 3);
-
-    uint8_t out[2] = { PCA9555_OUTPUT_PORT1, led_state };
-    i2c_write_blocking(I2C_PORT, PCA9555_ADDR, out, 2, false);
-}
-
 // ============================================================================
 // === Footswitch Logic =======================================================
 // ============================================================================
@@ -354,10 +323,6 @@ uint8_t handle_footswitches(void) {
     if (changed & 0x01) led_state ^= (1 << 1); // Footswitch 1 -> LED 0 toggle
     if (changed & 0x02) led_state ^= (1 << 0); // Footswitch 2 -> LED 1 toggle
     if (changed & 0x04) led_state ^= (1 << 2); // Footswitch 3 -> LED 2 toggle
-
-    if (changed & 0x08) { // Footswitch 4 (tap tempo)
-       on_tap_press();
-    }
 
     // Always return, even when turning off LEDs
     if ((changed & 0x01) /*&& (led_state & (1 << 1))*/)     { return 2; } // Footswitch 1 changed

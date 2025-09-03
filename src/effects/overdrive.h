@@ -50,10 +50,12 @@ static inline __attribute__((always_inline)) int32_t soft_clip(int32_t x) {
     if (x >= 0) {
         cubic = x3 / 4;
     } else {
-        int64_t temp = ((int64_t)x3 << 24) / (4 * (int64_t)od_asym_q24);
-        cubic = (int32_t)temp;
+        int64_t num = ((int64_t)x3 << 24);                 // Q8.24 numerator
+        int64_t den = 4 * (int64_t)od_asym_q24;
+        // sign-aware round-to-nearest
+        num += (num >= 0) ? (den >> 1) : -(den >> 1);
+        cubic = (int32_t)(num / den);
     }
-
     return (x - cubic) * 3;
 }
 
@@ -67,7 +69,8 @@ static inline __attribute__((always_inline)) int32_t process_od_channel(
     int32_t *lpf_state,
     int32_t *hpf_state
 ) {
-    s = (int32_t)(((int64_t)s * od_gain) >> 24);
+    //s = (int32_t)(((int64_t)s * od_gain) >> 24);
+    s = qmul(s, od_gain);
 
     // HPF before clipping to reduce rumble
     s = apply_1pole_hpf(s, hpf_state, HPF_A_Q24);   // Global HPF
@@ -80,24 +83,27 @@ static inline __attribute__((always_inline)) int32_t process_od_channel(
 
     // Low-shelf
     int32_t low_out = apply_1pole_lpf(s, low_state, BASS_A_Q24); // Global BASS
-    low_out = (int32_t)(((int64_t)low_out * od_low_gain_q24) >> 24);
+    //low_out = (int32_t)(((int64_t)low_out * od_low_gain_q24) >> 24);
+    low_out = qmul(low_out, od_low_gain_q24);
 
     // Mid band-pass
     int32_t mid_band = apply_1pole_lpf(
         apply_1pole_hpf(s, mid_hp_state, od_mid_a_q24),
         mid_lp_state, od_mid_a_q24
     );
-    int32_t mid_out = (int32_t)(((int64_t)mid_band * od_mid_gain_q24) >> 24);
+    //int32_t mid_out = (int32_t)(((int64_t)mid_band * od_mid_gain_q24) >> 24);
+    int32_t mid_out = qmul(mid_band, od_mid_gain_q24);
 
     // High-shelf filter
     int32_t high_out = s - apply_1pole_lpf(s, high_state, TREBLE_A_Q24); // Global TREB
-    high_out = (int32_t)(((int64_t)high_out * od_high_gain_q24) >> 24);
+    //high_out = (int32_t)(((int64_t)high_out * od_high_gain_q24) >> 24);
+    high_out = qmul(high_out, od_high_gain_q24);
 
     // Mix Tonestack
-    int64_t y = low_out + mid_out + high_out;
-    y = (y * od_volume) >> 24;
-
-    int32_t output = clamp24((int32_t)y);
+    int64_t y = (int64_t)low_out + (int64_t)mid_out + (int64_t)high_out;
+    y = y * (int64_t)od_volume;
+    y += (y >= 0) ? (1LL<<23) : -(1LL<<23);   // round-to-nearest
+    int32_t output = clamp24((int32_t)(y >> 24));
     return output;
 }
 

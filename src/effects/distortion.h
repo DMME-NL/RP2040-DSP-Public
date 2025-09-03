@@ -45,7 +45,8 @@ static inline int32_t diode_clip(int32_t x) {
     const int32_t knee = 0x040000; // 0.0625 (soft knee region)
 
     int32_t pos_thresh = DS_CLIP_THRESH_Q24;
-    int32_t neg_thresh = -((int32_t)(((int64_t)DS_CLIP_THRESH_Q24 * ds_asym_q24) >> 24));
+    // was: int32_t neg_thresh = -((int32_t)(((int64_t)DS_CLIP_THRESH_Q24 * ds_asym_q24) >> 24));
+    int32_t neg_thresh = -qmul(DS_CLIP_THRESH_Q24, ds_asym_q24);
 
     if (x > pos_thresh + knee) {
         x = pos_thresh;
@@ -57,7 +58,7 @@ static inline int32_t diode_clip(int32_t x) {
         x = neg_thresh + ((neg_thresh - x) >> 1);
     }
 
-    return x * 6; // Makeup gain
+    return x * 6; // Makeup gain (pure integer multiply is fine)
 }
 
 // --- Per-channel distortion processing ---
@@ -70,37 +71,43 @@ static inline __attribute__((always_inline)) int32_t process_ds_channel(
     int32_t *lpf_state,
     int32_t *hpf_state
 ) {
-    s = (int32_t)(((int64_t)s * ds_gain) >> 24);
+    // was: s = (int32_t)(((int64_t)s * ds_gain) >> 24);
+    s = qmul(s, ds_gain);
 
     // HPF before clipping to reduce rumble
-    s = apply_1pole_hpf(s, hpf_state, HPF_A_Q24);   // Global HPF
+    s = apply_1pole_hpf(s, hpf_state, HPF_A_Q24);
 
     // Clipping
     s = diode_clip(s);
 
     // LPF after clipping to reduce fizz
-    s = apply_1pole_lpf(s, lpf_state, LPF_A_Q24);   // Global LPF
+    s = apply_1pole_lpf(s, lpf_state, LPF_A_Q24);
 
     // Low-shelf
-    int32_t low_out = apply_1pole_lpf(s, low_state, BASS_A_Q24); // Global BASS
-    low_out = (int32_t)(((int64_t)low_out * ds_low_gain_q24) >> 24);
+    int32_t low_out = apply_1pole_lpf(s, low_state, BASS_A_Q24);
+    // was: low_out = (int32_t)(((int64_t)low_out * ds_low_gain_q24) >> 24);
+    low_out = qmul(low_out, ds_low_gain_q24);
 
     // Mid band-pass
     int32_t mid_band = apply_1pole_lpf(
         apply_1pole_hpf(s, mid_hp_state, ds_mid_a_q24),
         mid_lp_state, ds_mid_a_q24
     );
-    int32_t mid_out = (int32_t)(((int64_t)mid_band * ds_mid_gain_q24) >> 24);
+    // was: mid_out = (int32_t)(((int64_t)mid_band * ds_mid_gain_q24) >> 24);
+    int32_t mid_out = qmul(mid_band, ds_mid_gain_q24);
 
-    // High-shelf filter
-    int32_t high_out = s - apply_1pole_lpf(s, high_state, TREBLE_A_Q24); // Global TREB
-    high_out = (int32_t)(((int64_t)high_out * ds_high_gain_q24) >> 24);
+    // High-shelf
+    int32_t high_out = s - apply_1pole_lpf(s, high_state, TREBLE_A_Q24);
+    // was: high_out = (int32_t)(((int64_t)high_out * ds_high_gain_q24) >> 24);
+    high_out = qmul(high_out, ds_high_gain_q24);
 
-    // Mix Tonestack
-    int64_t y = low_out + mid_out + high_out;
-    y = (y * ds_volume) >> 24;
-
-    int32_t output = clamp24((int32_t)y);
+    // Mix tonestack (use rounded collapse for the final scale)
+    int64_t sum = (int64_t)low_out + (int64_t)mid_out + (int64_t)high_out;
+    // was: int64_t y = sum; y = (y * ds_volume) >> 24;
+    int64_t y = sum * (int64_t)ds_volume;
+    // round-to-nearest, sign-aware
+    y += (y >= 0) ? (1LL<<23) : -(1LL<<23);
+    int32_t output = clamp24((int32_t)(y >> 24));
     return output;
 }
 

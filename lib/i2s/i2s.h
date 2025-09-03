@@ -29,7 +29,8 @@
 // 64  = 3.5 ms total buffer time
 // 24  = 1.8 ms total buffer time
 // 16  = 1.5 ms total buffer time
-#define AUDIO_BUFFER_FRAMES 64 //24 = real time insgle effect  
+#define AUDIO_BUFFER_FRAMES 24  //24 = real time single effect  
+                                //64 = real time two / three effects
 #define SAMPLE_RATE         48000
 #define STEREO_BUFFER_SIZE  AUDIO_BUFFER_FRAMES * 2
 

@@ -16,7 +16,8 @@
  *
  * You should have received a copy of the GNU General Public License along with this project. 
  * If not, see <https://www.gnu.org/licenses/>.
- */#ifndef REVERB_H
+ */
+#ifndef REVERB_H
 #define REVERB_H
 
 #include <stdint.h>

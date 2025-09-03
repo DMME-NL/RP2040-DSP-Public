@@ -30,8 +30,6 @@
 #define SPI_BLOCK_COUNT    (MAX_DELAY_SAMPLES / BLOCK_SIZE)
 
 // === Parameters ===
-static uint32_t delay_samples_l = 48000;
-static uint32_t delay_samples_r = 48000;
 static uint32_t delay_feedback_q16 = Q16_ONE / 4;
 static uint32_t delay_mix_q16 = Q16_ONE / 2;
 static uint32_t delay_dry_q16 = Q16_ONE / 2; // computed as 1 - mix
@@ -274,12 +272,36 @@ static inline void process_audio_delay_sample(int32_t* inout_l, int32_t* inout_r
 
 // === Load parameters from memory ===
 static inline void load_delay_parms_from_memory(void) {
-    delay_samples_l = MIN_DELAY_SAMPLES +
-        ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][0] * (PERCH_DELAY_SAMPLES - MIN_DELAY_SAMPLES)) / POT_MAX;
+    // Set left delay time based on POT | TAP
+    if (!tap_tempo_active_l){
+        delay_samples_l = MIN_DELAY_SAMPLES +
+            ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][0] * (PERCH_DELAY_SAMPLES - MIN_DELAY_SAMPLES)) / POT_MAX;
+    }
+    else{
+        // set delay time to match tap tempo
+        delay_samples_l = (tap_interval_ms * SAMPLE_RATE) / 1000;
+        // Include farction factor offset
+        delay_samples_l = (uint32_t)((float)delay_samples_l * delay_fraction_float[delay_time_fraction_l]);
+        
+        if (delay_samples_l < MIN_DELAY_SAMPLES) delay_samples_l = MIN_DELAY_SAMPLES;
+        if (delay_samples_l > PERCH_DELAY_SAMPLES) delay_samples_l = PERCH_DELAY_SAMPLES;
+    }
 
-    delay_samples_r = MIN_DELAY_SAMPLES +
-        ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][1] * (PERCH_DELAY_SAMPLES - MIN_DELAY_SAMPLES)) / POT_MAX;
-    delay_feedback_q16 = ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][2] * Q16_ONE) / POT_MAX;
+    // Set left delay time based on POT | TAP    
+    if (!tap_tempo_active_r){
+        delay_samples_r = MIN_DELAY_SAMPLES +
+            ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][1] * (PERCH_DELAY_SAMPLES - MIN_DELAY_SAMPLES)) / POT_MAX;
+    }
+    else{
+        // set delay time to match tap tempo
+        delay_samples_r = (tap_interval_ms * SAMPLE_RATE) / 1000;
+        // Include farction factor offset
+        delay_samples_r = (uint32_t)((float)delay_samples_r * delay_fraction_float[delay_time_fraction_r]);
+
+        if (delay_samples_r < MIN_DELAY_SAMPLES) delay_samples_r = MIN_DELAY_SAMPLES;
+        if (delay_samples_r > PERCH_DELAY_SAMPLES) delay_samples_r = PERCH_DELAY_SAMPLES;
+    }
+        delay_feedback_q16 = ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][2] * Q16_ONE) / POT_MAX;
     delay_mix_q16      = ((uint32_t)storedPotValue[DELAY_EFFECT_INDEX][3] * Q16_ONE) / POT_MAX;
     delay_dry_q16      = Q16_ONE - delay_mix_q16;
 
@@ -301,7 +323,11 @@ static inline void load_delay_parms_from_memory(void) {
 // === Update parameters from pots ===
 static inline void update_delay_params_from_pots(int changed_pot) {
     if (changed_pot < 0) return;
-    storedPotValue[DELAY_EFFECT_INDEX][changed_pot] = pot_value[changed_pot];
+    // If pot 0 or 1 changed, disable tap tempo
+    if (changed_pot == 0){ tap_tempo_active_l = false; }
+    if (changed_pot == 1){ tap_tempo_active_r = false; }
+
+     storedPotValue[DELAY_EFFECT_INDEX][changed_pot] = pot_value[changed_pot];
     load_delay_parms_from_memory();
 }
 

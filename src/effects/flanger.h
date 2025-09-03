@@ -26,8 +26,6 @@
 
 // === Constants ===
 #define FLANGER_MAX_SAMPLES 256
-#define Q16_ONE 0x00010000
-#define Q24_ONE 0x01000000
 #define FLANGER_MIN_DELAY_SAMPLES 8
 
 // === Delay line ===

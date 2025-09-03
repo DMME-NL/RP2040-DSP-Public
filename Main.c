@@ -1,6 +1,6 @@
 /* 
  * Author: Milan Wendt
- * Date:   2025-08-19
+ * Date:   2025-09-03
  *
  * Copyright (c) 2025 Milan Wendt
  *
@@ -17,7 +17,7 @@
  * If not, see <https://www.gnu.org/licenses/>.
  */
 
- #include <stdio.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
@@ -59,7 +59,7 @@
 
 // Enable debugging features
 #define SHOW_CPU            1  // Show CPU usage in the UI
-#define DEBUG               0  // Enable debug mode for additional logging
+#define DEBUG               1  // Enable debug mode for additional logging
 #define PRINT_POT_VALUE     0  // Print POTS values to console (on change)
 #define PRINT_IO            0  // Print GPIO values to console (on change)
 #define PRINT_ACTION        0  // Print actions to console
@@ -72,26 +72,30 @@
 #define PRINT_I2S           0  // Print I2S debug info  in DEBUG
 
 // When no hardware is connected, we can use the default LED state
-#define DEFAULT_LED_STATE   0x00  // Default LED / EFFECT state 
+uint8_t default_led_state = 0x01;
 
 // Process gain and compression in stereo?
 // This will cause the loss of stereo channels when using other effects in front!
 #define STEREO  false 
 
 // Alarm interval in microseconds
-#define DEBUG_INTERVAL_US   1000000  // 1.0 second
-#define CPU_INTERVAL_US      500000  // 0.5 second
-#define LED_INTERVAL_US       30000  // 30Hz  ~30ms
-#define DISPLAY_INTERVAL_US   33333  // 30Hz  ~33ms
-#define CONTROL_INTERVAL_US   10000  // 100Hz ~10ms
+#define DEBUG_INTERVAL_US   1000000  //  1.0  second
+#define CPU_INTERVAL_US      500000  //  0.5  second
+#define LED_INTERVAL_US       30000  //  30Hz  ~30ms
+#define DISPLAY_INTERVAL_US   40000  //  25Hz  ~40ms
+#define CONTROL_INTERVAL_US   10000  //  100Hz ~10ms
+
+// Hold tap button for this long to save settings
+#define HOLD_FOR_SAVE       5000000  //  5.0 seconds
 
 // ============================================================================
 // === Global Variables & Timers ==============================================
 // ============================================================================
 
-uint8_t selected_slot = 0;          // Index of selected parameter (0–3)
+uint8_t selected_slot    = 0;       // Index of selected parameter (0–3)
 bool toggle_lfo_led_flag = false;   // Toggle LED for LFO effect
 bool lfo_update_led_flag = true;    // Flag to update LFO phase
+bool updateDelayFlag     = false;   // Flag to signal delay parameter update
 
 // CPU usage variables
 float cpu0_peak_usage = 0.0f;        // Peak CPU usage in percentage
@@ -103,17 +107,33 @@ uint64_t cpu1_peak_us = 0;           // Peak CPU usage in microseconds
 absolute_time_t last_pot_change_time;
 static uint64_t last_print_time_us = 0;
 
+// Global tap interval in milliseconds, initially 0 (no tempo)
+uint32_t tap_interval_ms = 500;
+bool tap_tempo_active_l = false;
+bool tap_tempo_active_r = false;
+bool activate_tap_flag = false;
+
+// Delay time global for drawing the display
+uint32_t delay_samples_l = 48000;
+uint32_t delay_samples_r = 48000;
+
+// Falsh saving flags
+volatile bool save_request = false;         // Core1 -> Core0 request
+volatile bool saving_in_progress = false;   // Core0 -> Core1 status
+volatile bool ui_park_req = false;  // Core0 asks Core1 to park
+volatile bool ui_park_ack = false;  // Core1 acknowledges it's parked
+
 // Include the files where we dumped some of the code
 #include "io.h"
-#include "ui.h"
+#include "ui_main.h"
 #include "var_conversion.h"
 #include "audio.h"
-
+#include "flash.h"
 
 // Update on single-pot change for the selected preamp
 static inline void update_preamp_from_pots(int changed_pot){
     if (changed_pot < 0 || changed_pot > 5) return;
-    storedPotValue[PREAMP_EFFECT_INDEX][changed_pot] = pot_value[changed_pot];
+    storedPreampPotValue[selected_preamp_style][changed_pot] = pot_value[changed_pot];
     switch (selected_preamp_style) {
         case FENDER:
             load_fender_params_from_memory();   break;
@@ -147,10 +167,6 @@ static EffectUpdateFn effect_param_updaters[NUM_EFFECTS] = {
     [CAB_SIM_EFFECT_INDEX]  = update_speaker_sim_params_from_pots,
     [TREM_EFFECT_INDEX]     = update_tremolo_params_from_pots,
     [VIBR_EFFECT_INDEX]     = update_vibrato_params_from_pots
-
-    /*
-        TODO - ADD NEW EFFECTS HERE
-    */
 };
 
 // ============================================================================
@@ -269,7 +285,7 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
             phaser_process_block(in_l, in_r, frames, selected_phaser_mode); break;
 
         case PREAMP_EFFECT_INDEX:   // [NEW]
-            // Check waht preamp processing is required
+            // Check what preamp processing is required
             switch (selected_preamp_style) {
                 case FENDER:
                     fender_preamp_process_block(in_l, in_r, frames, STEREO);    break;
@@ -278,7 +294,7 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
                 case MARSHALL:
                     marshall_preamp_process_block(in_l, in_r, frames, STEREO);  break;
                 case SOLDANO:
-                    slo_preamp_process_block(in_l, in_r, frames, STEREO);   break;
+                    slo_preamp_process_block(in_l, in_r, frames, STEREO);       break;
             } break;
 
         case REVB_EFFECT_INDEX:
@@ -292,11 +308,6 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
 
         case VIBR_EFFECT_INDEX:
             vibrato_process_block(in_l, in_r, frames, selected_vibrato_mode); break;
-
-        /*
-            TODO - ADD NEW EFFECTS HERE
-        */
-
         default:
             break;
     }
@@ -388,304 +399,74 @@ static void dma_i2s_in_handler(void) {
 }
 
 // ============================================================================
+// === FLASH - button check ===================================================
+// ============================================================================
+
+// Returns true while the TAP footswitch is physically held down.
+// IMPLEMENT to match your board mapping.
+// Example if 'footswitch_state' has TAP on bit 3 (LSB=slot1, slot2, slot3, TAP):
+static inline bool tap_button_is_down(void) {
+    // If you already expose a boolean for TAP, just return it here.
+    const uint8_t TAP_MASK = (1u << 3);
+    return (footswitch_state & TAP_MASK) != 0;
+}
+
+// ============================================================================
 // === IO Actions =============================================================
 // ============================================================================
 
-void handleButtonPress() {
+#include "actions.h"
 
-    if(DEBUG && PRINT_ACTION){ printf("Button pressed, current UI: %d, encoder position: %d\n", currentUI, encoder_position);}
+void handle_tap_tempo_button(){
+    // --- TAP button: short press = tempo, long hold = save ---
+    static bool tap_was_down     = false;
+    static uint64_t tap_down_us  = 0;
+    static bool saved_this_hold  = false;
+    static uint64_t last_tap_us  = 0;   // for tempo
 
-    if (currentUI == UI_HOME) {
-        if (encoder_position == 1) {
-            // Enter effect list UI
-            currentUI = UI_EFFECT_LIST;
-            encoder_position = selectedEffects[selected_slot];  // Preselect the current effect name
-        } else if (encoder_position >= 2 && encoder_position <= 4) {
-            // Select effect number (1–3)
-            int new_selected_slot = encoder_position - 2;
-            if (selected_slot != new_selected_slot) {
-                selected_slot = new_selected_slot;
-                param_selected = true;
-            }
-        } else if (encoder_position == 5) {
-            // Left or right arrow triggers UI switch
-            currentUI = UI_VU_IN;
-            encoder_position = 1;  // Set pointer to right arrow
-        } else if (encoder_position == 0) {
-            // Left or right arrow triggers UI switch
-            currentUI = UI_VU_OUT;
-        }
+    bool tap = tap_button_is_down();
+    uint64_t now_u = time_us_64();
+
+    if (tap && !tap_was_down) {
+        // Fresh press edge
+        tap_down_us = now_u;
+        saved_this_hold = false;
     }
-     
-    else if (currentUI == UI_VU_IN) {
-        // If encoder position is 0, go back to home
-        if (encoder_position == 0) { 
-            currentUI = UI_HOME;  
-        } 
-        else if (encoder_position == 1) { 
-            // If compressor is selected, show gain reduction
-            if(selectedEffects[selected_slot] == COMP_EFFECT_INDEX) {
-                currentUI = UI_VU_GAIN; 
-            }
-            // Otherwise, go to output VU
-            else{ currentUI = UI_VU_OUT; }
-        }
-    } 
 
-    else if (currentUI == UI_VU_OUT) {
-        if (encoder_position == 0) { 
-            // If compressor is selected, show gain reduction
-            if(selectedEffects[selected_slot] == COMP_EFFECT_INDEX) {
-                currentUI = UI_VU_GAIN; 
-            }
-            // Otherwise, go back to input VU
-            else{ currentUI = UI_VU_IN; }
-        } 
-        // Otherwise, go back to home
-        else if (encoder_position == 1) { 
-            currentUI = UI_HOME;
-            encoder_position = 5;  // Set pointer to right arrow
+    if (tap && tap_was_down) {
+        // Still holding: check duration
+        uint64_t held = now_u - tap_down_us;
+        if (held >= HOLD_FOR_SAVE && !saved_this_hold) {
+            save_request = true;     // trigger once
+            saved_this_hold = true;
+            if (DEBUG) printf("Long hold → save request!\n");
         }
     }
 
-    else if (currentUI == UI_VU_GAIN) {
-        if (encoder_position == 0) { currentUI = UI_VU_IN;  } 
-        else{                        currentUI = UI_VU_OUT; }
+    if (!tap && tap_was_down) {
+        // Released → only count as TAP TEMPO if NOT a long hold
+        uint64_t held = now_u - tap_down_us;
+        if (held < HOLD_FOR_SAVE && held > 50*1000) { // debounce 50 ms
+            if (last_tap_us != 0) {
+                uint32_t interval = (now_u - last_tap_us) / 1000; // ms
+                if (interval >= 50 && interval <= 2000) {
+                    tap_interval_ms = interval;
+                    activate_tap_flag = true;
+                    if (DEBUG) printf("Short tap → new tempo %u ms\n", tap_interval_ms);
+                }
+            }
+            last_tap_us = now_u;
+        }
     }
 
-    else if (currentUI == UI_EFFECT_LIST) {
-        // Apply selected effect to the correct slot and return to home
-        // Check if the effect is already selected in another slot
-        bool effectAlreadySelected = false;
-        for (int i = 0; i < 3; ++i) {
-            if (i != selected_slot && selectedEffects[i] == effectListIndex) {
-                // Effect already selected in another slot, show error
-                // Print error message to serial console
-                if(DEBUG) printf("Effect already selected in slot %d\n", i + 1);
-                effectAlreadySelected = true;
-                return;
-            }
-        }
-        if (!effectAlreadySelected) {
-            selectedEffects[selected_slot] = effectListIndex;
-            param_selected = true;
-
-            // Show menu for delay mode if delay effect is selected
-            if (effectListIndex == DELAY_EFFECT_INDEX) {
-                delay_mode_menu_index = selected_delay_mode;
-                encoder_position = delay_mode_menu_index;
-                currentUI = UI_DELAY_MODE_MENU;
-            } 
-            // Show menu for chorus effect
-            else if (effectListIndex == CHRS_EFFECT_INDEX){
-                chorus_mode_menu_index = selected_chorus_mode;
-                encoder_position = chorus_mode_menu_index;
-                currentUI = UI_CHORUS_MODE_MENU;
-            } 
-            // Show menu for stereo / mono mode for flanger effects
-            else if (effectListIndex == FLNG_EFFECT_INDEX){
-                stereo_mode_menu_index = selected_flanger_mode;
-                encoder_position = stereo_mode_menu_index;
-                currentUI = UI_STEREO_MODE_MENU;
-            } 
-            // Show menu for stereo / mono mode for phaser effects
-            else if (effectListIndex == PHSR_EFFECT_INDEX){
-                stereo_mode_menu_index = selected_phaser_mode;
-                encoder_position = stereo_mode_menu_index;
-                currentUI = UI_STEREO_MODE_MENU;
-            } 
-            else if (effectListIndex == TREM_EFFECT_INDEX){
-                stereo_mode_menu_index = selected_tremolo_mode;
-                encoder_position = stereo_mode_menu_index;
-                currentUI = UI_STEREO_MODE_MENU;
-            } 
-            else if (effectListIndex == VIBR_EFFECT_INDEX){
-                stereo_mode_menu_index = selected_vibrato_mode;
-                encoder_position = stereo_mode_menu_index;
-                currentUI = UI_STEREO_MODE_MENU;
-            } 
-            // Show menu for preamp selection [NEW]
-            else if (effectListIndex == PREAMP_EFFECT_INDEX){
-                preamp_select_menu_index = selected_preamp_style;
-                encoder_position = preamp_select_menu_index;
-                currentUI = UI_PREAMP_SELECTION;
-            } 
-            // Any other effect just returns to home
-            else {
-                encoder_position = 1;
-                currentUI = UI_HOME;
-            }
-        }
-    }
-    // Set the selected delay / chorus / stereo mode and return to home
-    else if (currentUI == UI_DELAY_MODE_MENU  ||
-             currentUI == UI_CHORUS_MODE_MENU ||
-             currentUI == UI_STEREO_MODE_MENU ||
-             currentUI == UI_PREAMP_SELECTION) {
-        // Changin the mode hapens in the draw function
-        // That way we can update the selected mode in real time
-        encoder_position = 1;  // reset to effect name
-        currentUI = UI_HOME;
-    } 
-    // Undefined UI and action
-    else {
-        if(DEBUG){ 
-            printf("[!] Undefined UI for button press: %d\n", currentUI); 
-            printf("    Returning back to HOME\n"); 
-        }
-        encoder_position = 1;  // reset to effect name
-        currentUI = UI_HOME;
-    } 
+    tap_was_down = tap;
 }
 
 // ============================================================================
 // === UI Generation ==========================================================
 // ============================================================================
 
-void drawUI(int changed_pot_index) {
-    SSD1306_ClearScreen();
-
-    // Handle pot interaction and timeout
-    if (changed_pot_index >= 0) {
-        if (currentUI != UI_POT) {
-            previousUI = currentUI;
-        }
-        currentUI = UI_POT;
-        last_changed_pot = changed_pot_index;
-        last_pot_change_time = get_absolute_time();
-    }
-
-    if (currentUI == UI_POT) {
-        int64_t us_since_change = absolute_time_diff_us(last_pot_change_time, get_absolute_time());
-        if (us_since_change > 500000) {
-            currentUI = previousUI;
-        }
-    }
-
-    // UI rendering logic
-    switch (currentUI) {
-        case UI_HOME:
-            // Wrap encoder position around home screen
-            if (encoder_position < 0) encoder_position = 5;
-            if (encoder_position > 5) encoder_position = 0;
-            drawHomeScreen(encoder_position, param_selected, selected_slot);
-            break;
-
-        case UI_EFFECT_LIST:
-            // Wrap encoder around effect list entries
-            if (encoder_position < 0) encoder_position = NUM_EFFECTS - 1;
-            if (encoder_position >= NUM_EFFECTS) encoder_position = 0;
-            effectListIndex = encoder_position;
-            drawEffectListScreen(effectListIndex);
-            break;
-
-        case UI_DELAY_MODE_MENU:
-            // Wrap encoder
-            if (encoder_position < 0) encoder_position = NUM_DELAY_MODES - 1;
-            if (encoder_position >= NUM_DELAY_MODES) encoder_position = 0;
-
-            delay_mode_menu_index = encoder_position;
-            drawDelayModeMenu(delay_mode_menu_index);
-            break;
-
-        case UI_CHORUS_MODE_MENU:
-            // Wrap encoder
-            if (encoder_position < 0) encoder_position = NUM_CHORUS_MODES - 1;
-            if (encoder_position >= NUM_CHORUS_MODES) encoder_position = 0;
-
-            chorus_mode_menu_index = encoder_position;
-            drawChorusModeMenu(chorus_mode_menu_index);
-            break;
-
-        case UI_PREAMP_SELECTION: // [NEW]
-            // Wrap encoder
-            if (encoder_position < 0) encoder_position = NUM_PREAMPS - 1;
-            if (encoder_position >= NUM_PREAMPS) encoder_position = 0;
-
-            preamp_select_menu_index = encoder_position;
-            drawPreampSelectMenu(preamp_select_menu_index);
-            break;
-
-        case UI_STEREO_MODE_MENU:
-            // Wrap encoder
-            if (encoder_position < 0) encoder_position = NUM_STEREO_MODES - 1;
-            if (encoder_position >= NUM_STEREO_MODES) encoder_position = 0;
-
-            stereo_mode_menu_index = encoder_position;
-            drawStereoModeMenu(stereo_mode_menu_index);
-            break;
-
-        case UI_POT:
-            drawPotScreen(last_changed_pot, encoder_position);
-            break;
-
-        case UI_VU_IN:
-            // Wrap encoder position on VU screen
-            if (encoder_position < 0) encoder_position = 1;
-            if (encoder_position > 1) encoder_position = 0;
-
-            if (absolute_time_diff_us(last_sample_time, get_absolute_time()) > 25000) {
-                last_sample_time = get_absolute_time();
-                peak_left_block = peak_left;
-                peak_right_block = peak_right;
-                peak_left = 0;
-                peak_right = 0;
-            }
-
-            drawVUMeterScreen(peak_left_block, peak_right_block, encoder_position, VU_INPUT);
-            break;
-
-        case UI_VU_OUT:
-            // Wrap encoder position on VU screen
-            if (encoder_position < 0) encoder_position = 1;
-            if (encoder_position > 1) encoder_position = 0;
-
-            if (absolute_time_diff_us(last_sample_time, get_absolute_time()) > 25000) {
-                last_sample_time = get_absolute_time();
-                peak_left_block = peak_left;
-                peak_right_block = peak_right;
-                peak_left = 0;
-                peak_right = 0;
-            }
-
-            drawVUMeterScreen(peak_left_block, peak_right_block, encoder_position, VU_OUTPUT);
-            break;
-
-        case UI_VU_GAIN:
-            // Wrap encoder position on VU screen
-            if (encoder_position < 0) encoder_position = 1;
-            if (encoder_position > 1) encoder_position = 0;
-
-            if (absolute_time_diff_us(last_sample_time, get_absolute_time()) > 25000) {
-                last_sample_time = get_absolute_time();
-
-                // Convert linear gain to float (0.0 to 1.0)
-                float gain_l = q24_to_float(comp_linear_gain_q24_l);
-                float gain_r = q24_to_float(comp_linear_gain_q24_r);
-
-                // Convert to dB scale
-                float gain_db_l = 20.0f * log10f(gain_l);
-                float gain_db_r = 20.0f * log10f(gain_r);
-
-                // Clamp to expected dB range (e.g. -40 dB to 0 dB)
-                if (gain_db_l < -40.0f) gain_db_l = -40.0f;
-                if (gain_db_r < -40.0f) gain_db_r = -40.0f;
-                if (gain_db_l > 0.0f) gain_db_l = 0.0f;
-                if (gain_db_r > 0.0f) gain_db_r = 0.0f;
-
-                // Map -40 dB → 0, 0 dB → max needle value
-                const float VU_SCALE = 2147483392.0f;  // Match drawVUMeter input range
-                peak_left_block  = (uint32_t)((gain_db_l + 40.0f) * (VU_SCALE / 40.0f));
-                peak_right_block = (uint32_t)((gain_db_r + 40.0f) * (VU_SCALE / 40.0f));
-            }
-
-            drawVUMeterScreen(peak_left_block, peak_right_block, encoder_position, VU_GAIN);
-            break;
-
-    }
-
-    SSD1306_UpdateScreen();
-}
+#include "ui_draw.h"
 
 // ============================================================================
 // === Debug Information ======================================================
@@ -766,6 +547,9 @@ void setup_system_and_peripheral_clocks() {
     // Important: USB takes time to enumerate and reset clocks
     sleep_ms(100);  // ← Give USB time to settle and override clocks
 
+    // Read settings stored in flash
+    init_settings_from_flash();
+
     // Set clk_peri to 125 MHz (from clk_sys)
     clock_configure(
         clk_peri,
@@ -800,6 +584,18 @@ void print_clock_info() {
 // === SECOND Control CORE ====================================================
 // ============================================================================
 
+static __not_in_flash_func(void core1_park_loop)(void) {
+    uint32_t irq = save_and_disable_interrupts();  // stop ISRs that might live in flash
+    ui_park_ack = true;
+    while (ui_park_req) {
+        __wfe();   // low-power wait, executes from ROM
+    }
+    ui_park_ack = false;
+    restore_interrupts(irq);
+}
+
+volatile bool dsp_ready = false;
+
 void second_thread() {
     I2C_Initialize(I2C_TARGET_HZ);
     SSD1306_Init();
@@ -807,11 +603,6 @@ void second_thread() {
     
     // Draw centered logo
     SSD1306_DrawSplashLogoBitmap(32, 0, true);
-    
-    // Optionally wait some time
-    sleep_ms(1000);
-    SSD1306_UpdateScreen();
-    SetFont(&Font8x8);
 
     // Setup encoder, GPIO expander, and potentiometers
     setup_encoder();
@@ -820,7 +611,7 @@ void second_thread() {
     setup_global_irq_handler();  // must be after the above
     initialize_potentiometers();
     initialize_gpio_expander();
-
+    
     // Call audio init functions
     reverb_init();
     init_chorus();
@@ -853,14 +644,16 @@ void second_thread() {
     load_marshall_params_from_memory();
     load_slo_params_from_memory();   
 
-    /*
-        TODO - ADD NEW EFFECTS HERE
-    */
-
     // Update the volume based on the curret potentiometer state
     update_volume_from_pot();
 
     int changed = -1;
+    dsp_ready = true;   // <<< signal ready
+
+    // Optionally wait some time to show the logo
+    sleep_ms(1000);
+    SSD1306_UpdateScreen();
+    SetFont(&Font8x8);
 
     // Timer tracking variables
     uint64_t last_debug_time   = time_us_64();
@@ -869,6 +662,10 @@ void second_thread() {
     uint64_t last_control_time = time_us_64();
 
     while (true) {
+
+        // --- Cooperative park: when Core0 wants to write flash, we stop touching I2C/OLED/etc.
+        if (ui_park_req) { core1_park_loop(); continue; }
+
         // CPU resource counter 
         cpu1_task_start();
 
@@ -932,7 +729,6 @@ void second_thread() {
             if (encoder_button == 1) {
                 handleButtonPress();
             }
-
             
             if(DEBUG && PRINT_IO){
                 // Optional: debug log current GPIO state
@@ -942,10 +738,69 @@ void second_thread() {
                 printf("LED state: %02X\n", led_state);
             }        
         }
-        
-        // Updates tap tempo LED blinking
-        update_tap_blink();
 
+        // Handle tap tempo button
+        handle_tap_tempo_button();
+
+        // Update tap tempo on flag
+        if (activate_tap_flag){
+            for (int i = 0; i < 3; i++){
+                tap_tempo_active_l = true;
+                tap_tempo_active_r = true;
+                if(selectedEffects[i] == DELAY_EFFECT_INDEX){
+                    load_delay_parms_from_memory(); // Reload delay params to apply new tempo
+                }                
+            }   
+            activate_tap_flag = false;         
+        }
+
+        // Update the delay settings if the tempo has changed
+        if(updateDelayFlag){
+            //if(DEBUG) { printf("Updating L|R delay: %s | %s\n", delay_fraction_name[delay_time_fraction_l], delay_fraction_name[delay_time_fraction_r]);}
+            load_delay_parms_from_memory(); // Reload delay params to apply new tempo
+            updateDelayFlag = false;
+        }
+        
+        // BLink the tap tempo and LFO LED in sync with delay time if delay is selected
+        if(selectedEffects[selected_slot] == DELAY_EFFECT_INDEX){
+            // Calculate intervals in ms from delay_samples and SAMPLE_RATE
+            uint32_t interval_l = (uint32_t)((float)delay_samples_l * 1000.0f / (float)SAMPLE_RATE);
+            uint32_t interval_r = (uint32_t)((float)delay_samples_r * 1000.0f / (float)SAMPLE_RATE);
+
+            // Clamp to avoid too-fast blinking
+            if (interval_l < 50) interval_l = 50;
+            if (interval_r < 50) interval_r = 50;
+
+            static absolute_time_t next_blink_time_l = {0};
+            static absolute_time_t next_blink_time_r = {0};
+            static bool blink_state_l = false;
+            static bool blink_state_r = false;
+
+            absolute_time_t now = get_absolute_time();
+
+            // Tap LED (left delay)
+            if (absolute_time_diff_us(now, next_blink_time_l) <= 0) {
+                blink_state_l = !blink_state_l;
+                if (blink_state_l)
+                    led_state |= (1 << 3);  // LED 3 ON (Tap LED)
+                else
+                    led_state &= ~(1 << 3); // LED 3 OFF
+
+                next_blink_time_l = delayed_by_ms(now, interval_l / 2);
+            }
+
+            // LFO LED (right delay)
+            if (absolute_time_diff_us(now, next_blink_time_r) <= 0) {
+                blink_state_r = !blink_state_r;
+                lfo_led_state = blink_state_r;
+                next_blink_time_r = delayed_by_ms(now, interval_r / 2);
+            }
+        }
+        // Otherwise, just use tap tempo blink
+        else{
+            update_tap_blink();
+        }
+ 
         // Update control parameters and read pots at regular intervals
         if (now - last_control_time >= CONTROL_INTERVAL_US) {
             last_control_time += CONTROL_INTERVAL_US;
@@ -968,31 +823,50 @@ void second_thread() {
                 last_pot_change_time = get_absolute_time();
             }
         }
+        // Only tick LEDs when we're NOT saving or being asked to park
+        if (!saving_in_progress && !ui_park_req) {
+            // check if it is time to update the LEDs
+            if (now - last_lfo_time >= LED_INTERVAL_US) {
+                last_lfo_time += LED_INTERVAL_US;
 
-        // check if it is time to update the LEDs
-        if (now - last_lfo_time >= LED_INTERVAL_US) {
-            last_lfo_time += LED_INTERVAL_US;
+                // Let the audio core know that it can update the LFO LED
+                lfo_update_led_flag = true;
 
-            // Let the audio core know that it can update the LFO LED
-            lfo_update_led_flag = true;
+                // Bits 0–3: led_state, Bits 4–6: zero, Bit 7: lfo_led_state
+                uint8_t port1_value = (lfo_led_state << 7) | (led_state & 0x0F);
 
-            // Bits 0–3: led_state, Bits 4–6: zero, Bit 7: lfo_led_state
-            uint8_t port1_value = (lfo_led_state << 7) | (led_state & 0x0F);
-
-            // Write to OUTPUT_PORT1 (address 0x03)
-            uint8_t out[] = { PCA9555_OUTPUT_PORT1, port1_value };
-            i2c_write_blocking(I2C_PORT, PCA9555_ADDR, out, 2, false);
+                // Write to OUTPUT_PORT1 (address 0x03)
+                uint8_t out[] = { PCA9555_OUTPUT_PORT1, port1_value };
+                i2c_write_blocking(I2C_PORT, PCA9555_ADDR, out, 2, false);
+            }
         }
-
-        // update the UI display every DISPLAY_INTERVAL_US
-        if (now - last_display_time >= DISPLAY_INTERVAL_US) {
-            last_display_time += DISPLAY_INTERVAL_US;
-            drawUI(changed);
-        }
+        
+        // If we’re saving, show a blocking overlay and skip normal UI updates
+        static bool saving_drawn = false;
+        if (saving_in_progress) {
+            if (!saving_drawn) {
+                SetFont(&Font8x8);
+                SSD1306_ClearScreen();
+                // Centered "SAVING..."
+                const char* msg = "SAVING...";
+                // 128x64 display, 8x8 font -> estimate centering
+                SSD1306_DrawString( (128 - (int)strlen(msg)*8)/2, (64-8)/2, msg, false);
+                SSD1306_UpdateScreen();
+                saving_drawn = true;
+            }
+            // While saving, keep LEDs and I/O alive, but skip drawUI()
+        } else {
+            saving_drawn = false;
+            // Normal UI cadence
+            if (now - last_display_time >= DISPLAY_INTERVAL_US) {
+                last_display_time += DISPLAY_INTERVAL_US;
+                drawUI(changed);
+            }
+        }       
 
         // Update the CPU usage 
-        if(SHOW_CPU){   CPU_usage_counter(); }
-        
+        if(SHOW_CPU) CPU_usage_counter();
+
         // Print debug info to terminal
         if (now - last_debug_time >= DEBUG_INTERVAL_US) {
             last_debug_time += DEBUG_INTERVAL_US;
@@ -1044,17 +918,51 @@ int main() {
     // Overclock the system 
     setup_system_and_peripheral_clocks();
 
+    // Launch OLED/UI on second core
+    multicore_launch_core1(second_thread);
+    // Wait for Core 1 to be ready
+    while (!dsp_ready) tight_loop_contents();
+
     // Setup audio
     i2s_program_start_synched(pio0, &i2s_config_default, dma_i2s_in_handler, &i2s);
 
     // Calculate sample time
     sample_period_us = (1000000.0f * AUDIO_BUFFER_FRAMES) / SAMPLE_RATE;
 
-    // Launch OLED/UI on second core
-    multicore_launch_core1(second_thread);
-
     while (true) {
-        // Audio runs in interrupts, no need to block here
-        sleep_ms(1);      
+        sleep_ms(1);
+
+        // Perform requested save on Core 0
+        if (save_request) {
+            if(DEBUG) printf("Start saving to flash:\n");
+            saving_in_progress = true;
+            __sev();
+            sleep_ms(5);              // let OLED draw "SAVING..."
+
+            // Wait for core 1 to park
+            ui_park_req = true;
+            __sev();
+            while (!ui_park_ack) { 
+                tight_loop_contents();
+                sleep_ms(250);
+                // if(DEBUG) printf("Waiting for Core1 to park...\n");
+            }
+
+            save_all_settings_to_flash();   // <-- no args
+
+            // Wait for core 1 to un-park
+            ui_park_req = false;
+            __sev();
+            while (ui_park_ack) { 
+                tight_loop_contents(); 
+                sleep_ms(250);
+                // if(DEBUG) printf("Waiting for Core1 to un-park...\n");
+            }
+
+            saving_in_progress = false;
+            save_request = false;
+
+            if(DEBUG) printf("Settings saved to flash!\n");
+        }
     }
 }

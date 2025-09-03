@@ -1,0 +1,18 @@
+Selected for Development:
+[V] Tap tempo for delay
+[V] Fractions for delay
+[V] Store settings
+[V] Wear leveling in Flash
+[ ] Vibrato
+
+Nice to Have:
+[ ] MIDI
+[ ] Fix modulation artifacts
+[ ] Wah-Wah
+
+Not Required:
+[ ] SPI RAM optimize
+[ ] Effects optimize
+[ ] Expression Pedal
+[ ] Tap tempo for modulation effects
+ 

@@ -39,17 +39,29 @@ static int32_t fz_hpf_state_l = 0, fz_hpf_state_r = 0;
 
 // --- Optimized fuzz clip ---
 static inline __attribute__((always_inline)) int32_t hard_clip(int32_t x) {
-    if (x > 0x300000) x = 0x300000;    // ~0.1875
+    if (x >  0x300000) x =  0x300000;      // ~0.1875
     if (x < -0x300000) x = -0x300000;
 
-    int32_t x2 = (x >> 12) * (x >> 12);
+    // Fast x^2 in reduced precision (as you had)
+    int32_t xr = x >> 12;
+    int32_t x2 = xr * xr;                  // non-Q24, intentional
 
     if (x >= 0) {
-        return (x - (x2 >> 13)) * 8;
+        // was: return (x - (x2 >> 13)) * 8;
+        int32_t soft = x - (x2 >> 13);
+        return soft * 8;
     } else {
-        // Apply asymmetry: scale x2 term more on the negative side
-        int64_t bias_term = ((int64_t)x2 << 24) / fz_asym_q24;
-        return (x + (int32_t)(bias_term >> 13)) * 8;
+        // was:
+        // int64_t bias_term = ((int64_t)x2 << 24) / fz_asym_q24;
+        // return (x + (int32_t)(bias_term >> 13)) * 8;
+
+        // Rounded divide: ((num) / fz_asym_q24) with sign-aware 0.5 LSB
+        int64_t num = ((int64_t)x2 << 24);
+        int64_t den = (int64_t)fz_asym_q24;
+        if (num >= 0) num += (den >> 1); else num -= (den >> 1);
+        int32_t bias_q24 = (int32_t)(num / den);  // Q8.24
+        int32_t bias = bias_q24 >> 13;            // match your original scaling
+        return (x + bias) * 8;
     }
 }
 
@@ -63,7 +75,9 @@ static inline __attribute__((always_inline)) int32_t process_fz_channel(
     int32_t *lpf_state,
     int32_t *hpf_state
 ) {
-    s = (int32_t)(((int64_t)s * fz_gain) >> 24);
+    // Gain
+    // was: s = (int32_t)(((int64_t)s * fz_gain) >> 24);
+    s = qmul(s, fz_gain);
 
     // HPF before clipping to reduce rumble
     s = apply_1pole_hpf(s, hpf_state, HPF_A_Q24);   // Global HPF
@@ -76,24 +90,27 @@ static inline __attribute__((always_inline)) int32_t process_fz_channel(
 
     // Low-shelf
     int32_t low_out = apply_1pole_lpf(s, low_state, BASS_A_Q24); // Global BASS
-    low_out = (int32_t)(((int64_t)low_out * fz_low_gain_q24) >> 24);
+    // was: low_out = (int32_t)(((int64_t)low_out * fz_low_gain_q24) >> 24);
+    low_out = qmul(low_out, fz_low_gain_q24);
 
     // Mid band-pass
     int32_t mid_band = apply_1pole_lpf(
         apply_1pole_hpf(s, mid_hp_state, fz_mid_a_q24),
         mid_lp_state, fz_mid_a_q24
     );
-    int32_t mid_out = (int32_t)(((int64_t)mid_band * fz_mid_gain_q24) >> 24);
+    // was: mid_out = (int32_t)(((int64_t)mid_band * fz_mid_gain_q24) >> 24);
+    int32_t mid_out = qmul(mid_band, fz_mid_gain_q24);
 
     // High-shelf filter
     int32_t high_out = s - apply_1pole_lpf(s, high_state, TREBLE_A_Q24); // Global TREB
-    high_out = (int32_t)(((int64_t)high_out * fz_high_gain_q24) >> 24);
+    // was: high_out = (int32_t)(((int64_t)high_out * fz_high_gain_q24) >> 24);
+    high_out = qmul(high_out, fz_high_gain_q24);
 
-    // Mix Tonestack
-    int64_t y = low_out + mid_out + high_out;
-    y = (y * fz_volume) >> 24;
-
-    int32_t output = clamp24((int32_t)y);
+    // Final volume scale (round collapse once)
+    int64_t y = (int64_t)low_out + (int64_t)mid_out + (int64_t)high_out;
+    y = y * (int64_t)fz_volume;
+    y += (y >= 0) ? (1LL<<23) : -(1LL<<23);   // round-to-nearest
+    int32_t output = clamp24((int32_t)(y >> 24));
     return output;
 }
 

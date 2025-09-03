@@ -23,8 +23,6 @@
 #include <stdint.h>
 
 // === Fixed-point compressor without floating point ===
-
-#define Q24_ONE 0x01000000
 #define SOFT_KNEE_WIDTH_Q24 float_to_q24(0.1f)  // ~10 dB knee width
 
 // Compressor parameters (Q8.24 fixed-point)

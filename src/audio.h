@@ -107,18 +107,18 @@ typedef struct {
     int32_t s1_r, s2_r;
 } BPFPair;
 
-// Apply a 1-pole IIR filter
+// Apply a 1-pole IIR LPF
 static inline int32_t apply_1pole_lpf(int32_t x, int32_t* state, int32_t a_q24) {
     int32_t diff = x - *state;
-    *state += (int32_t)(((int64_t)diff * a_q24) >> 24);
+    *state += qmul(diff, a_q24);
     return *state;
 }
 
-// Apply a 1-pole HPF filter
+// Apply a 1-pole IIR HPF
 static inline int32_t apply_1pole_hpf(int32_t x, int32_t* state, int32_t a_q24) {
     int32_t prev = *state;
     int32_t diff = x - prev;
-    *state += (int32_t)(((int64_t)diff * a_q24) >> 24);
+    *state += qmul(diff, a_q24);
     return x - *state;
 }
 
@@ -146,7 +146,7 @@ static inline int32_t apply_1pole_bsf(int32_t x, BPFPair* f, int ch) {
 }
 
 // Track peak levels for clipping and VU meter (24-bit samples)
-void process_audio_clipping(int32_t sample_left, int32_t sample_right, volatile int32_t* local_peak_left, volatile int32_t* local_peak_right) {
+static inline void process_audio_clipping(int32_t sample_left, int32_t sample_right, volatile int32_t* local_peak_left, volatile int32_t* local_peak_right) {
     int32_t abs_left = (sample_left < 0) ? -sample_left : sample_left;
     if (abs_left > *local_peak_left) *local_peak_left = abs_left;
 
@@ -155,13 +155,13 @@ void process_audio_clipping(int32_t sample_left, int32_t sample_right, volatile 
 }
 
 // Update volume from potentiometer (pot_value scaled 0..POT_MAX)
-void update_volume_from_pot(void) {
+static inline void update_volume_from_pot(void) {
     volume_q16 = ((uint32_t)pot_value[6] * Q16_ONE) / POT_MAX;
 }
 
 // Takes ~1% of core 0 CPU time at 48kHz
 // Apply volume to one stereo sample pair (24-bit quality)
-void process_audio_volume_sample(int32_t* inout_l, int32_t* inout_r) {
+static inline void process_audio_volume_sample(int32_t* inout_l, int32_t* inout_r) {
     *inout_l = multiply_q16(*inout_l, volume_q16);
     *inout_r = multiply_q16(*inout_r, volume_q16);
 }
@@ -205,34 +205,60 @@ static inline uint32_t lfo_q16_shape(uint32_t phase, uint8_t mode) {
     return folded;
 }
 
-// =====================================================================================
-//                 ANALYTIC MAPPINGS (called on parameter load)
-// =====================================================================================
+// ============================================================================
+// === Vacuum Tube Model ======================================================
+// ============================================================================
 
-static inline float cathode_bypass_factor(float Rk, float Ck, float freq){
-    if (Ck <= 0.0f) return 0.0f;
-    float Xc = 1.0f / (2.0f*(float)M_PI*freq*Ck);
-    float alpha = Xc / (Rk + Xc); // fraction NOT bypassed
-    return 1.0f - alpha;          // 0..1 bypass fraction
+// Cathode follower-ish feel: positive half gets quadratic compression (amount_q24 * x^2),
+// negative half gets a simple scale (neg_scale_q24).
+static inline __attribute__((always_inline))
+int32_t cathode_squish_q24(int32_t x, int32_t amount_q24, int32_t neg_scale_q24){
+    if (x > 0){
+        // x - amount * x^2  (rounded)
+        int32_t x2   = qmul(x, x);
+        int32_t comp = qmul(amount_q24, x2);
+        return x - comp;
+    } else {
+        return qmul(x, neg_scale_q24);
+    }
 }
 
-static inline float triode_stage_gain_mag(float mu, float rp, float RL, float Rk, float bypass_frac){
-    float Reff = Rk * (1.0f - bypass_frac);
-    float denom = rp + RL + (mu + 1.0f)*Reff;
-    if (denom <= 1.0f) denom = 1.0f;
-    return (mu * RL) / denom;
-}
+// Triode-ish waveshaper:
+// y = x - k3*x^3 + k5*x^5 (k5 term optional; gated by |x| > x5_gate_thresh)
+// k3/k5 can be asymmetric: pass pos/neg sets.
+// use_x5 != 0 enables x^5 path; set to 0 to disable without changing code.
+static inline __attribute__((always_inline))
+int32_t triode_ws_35_asym_fast_q24(int32_t x,
+                                   int32_t k3_pos_q24, int32_t k5_pos_q24,
+                                   int32_t k3_neg_q24, int32_t k5_neg_q24,
+                                   int32_t x5_gate_thresh_q24,
+                                   int     use_x5)
+{
+    // Limit to ±1.0 in Q8.24
+    if (x >  0x01000000) x =  0x01000000;
+    if (x < -0x01000000) x = -0x01000000;
 
-static inline void derive_nonlinear_from_bias(
-    float mu, float rp, float RL, float Rk, float bypass_frac,
-    float *shape_out, float *asym_out
-){
-    float Reff = Rk * (1.0f - bypass_frac);
-    float cold = Reff / (Reff + RL/5.0f);
-    // VOX = hotter bias → softer knee & less asym than a Marshall cold clipper
-    float shape = 0.25f + 0.35f * cold;     // ~0.25..0.60
-    float asym  = 1.10f + 0.45f * cold;     // ~1.10..1.55
-    *shape_out = shape; *asym_out = asym;
+    // Rounded power chain
+    int32_t x2 = qmul(x, x);      // x^2
+    int32_t x3 = qmul(x2, x);     // x^3
+
+    // y = x - k3*x^3
+    const int32_t k3 = (x >= 0) ? k3_pos_q24 : k3_neg_q24;
+    int32_t y = x - qmul(k3, x3);
+
+    if (use_x5){
+        int32_t ax = (x >= 0) ? x : -x;
+        if (ax > x5_gate_thresh_q24){
+            int32_t x5 = qmul(x3, x2);                     // x^5
+            const int32_t k5 = (x >= 0) ? k5_pos_q24 : k5_neg_q24;
+            y += qmul(k5, x5);
+        }
+    }
+
+    // Safety clip
+    if (y >  0x01000000) y =  0x01000000;
+    if (y < -0x01000000) y = -0x01000000;
+    return y;
 }
 
 // ============================================================================
@@ -253,7 +279,8 @@ static inline void derive_nonlinear_from_bias(
 #include <tremolo.h>
 #include <vibrato.h>
 
-#include <preamp_marshall.h>
 #include <preamp_fender.h>
 #include <preamp_vox.h>
+#include <preamp_marshall.h>
 #include <preamp_soldano.h>
+//#include <preamp.h>

@@ -48,6 +48,8 @@ target_include_directories(Main PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/lib/ssd1306
     ${CMAKE_CURRENT_LIST_DIR}/lib/spi_ram    
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/ui
+    ${CMAKE_CURRENT_LIST_DIR}/src/flash
     ${CMAKE_CURRENT_LIST_DIR}/src/effects
     ${CMAKE_CURRENT_BINARY_DIR}  # for i2s.pio.h generated header
 )
