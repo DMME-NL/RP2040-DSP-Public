@@ -25,6 +25,7 @@ The firmware architecture is modular, supporting multiple effects that can be st
   - One assignable to any effect parameter.
 
 > **Note:** Total number of simultaneous effects is limited by to CPU resources and their type.
+> Some features, like MIDI and expression pedal, have not been implemented as of now.
 
 ---
 
@@ -51,13 +52,13 @@ The firmware architecture is modular, supporting multiple effects that can be st
 - **Compressor:** Adjustable threshold, ratio, attack, release, and makeup gain.
 - **Distortion, Overdrive, Fuzz:** Various analog-inspired waveshaping algorithms with tone filtering similar to the EQ.
 
-### Speaker & cab simulation
+### Speaker & Preamp simulation
 
 - **Cabinet Sim (Speaker Sim):** Parametric approximation of guitar cabinet. Includes multiple controls for tone shaping.
+- **Preamp:** Simulates preamp coloration and dynamic shaping (Marshall, VOX, Fender).
 
 ### Work-in-Progress
 
-- **Preamp:** Simulates preamp coloration and dynamic shaping (Marshall, VOX, Fender).
 - **Vibrato:** Pure pitch modulation using short-time delay interpolation.
 
 ---
@@ -69,7 +70,7 @@ The firmware architecture is modular, supporting multiple effects that can be st
   - `load_*_parms_from_memory()`
   - `update_*_params_from_pots()`
   - `process_audio_*_sample()`
-- **Pot and memory sync:** Parameters load from stored memory and dynamically update when pots change. (WIP - store to Flash after power down)
+- **Pot and memory sync:** Parameters load from stored memory and dynamically update when pots change. Holding down the TAP button for 5 seconds stores all the effects and settings to flash, so they can be receovered after power-down.
 - **Optimized math:** Using fixed point math and lightweight approximations, reducing CPU usage without harming audio quality.
 - **Dual-core structure:**
   - **Core 0:** Dedicated to real-time audio sample processing.
@@ -90,32 +91,34 @@ The firmware architecture is modular, supporting multiple effects that can be st
 
 | Effect        | CPU Peak Usage (%) |
 |---------------|--------------------|
-| Chorus        | 27%    |
-| Compressor    | 20%    |
-| Delay         | 62%    |
-| Distortion    | 26%    |
-| EQ            | 22%    |
-| Flanger       | 17%    |
-| Fuzz          | 33%    |
-| Overdrive     | 35%    |
-| Phaser        | 27%    |
-| Preamp        | WIP    |
+| Chorus        | 21%    |
+| Compressor    | 11%    |
+| Delay         | 49%    |
+| Distortion    | 19%    |
+| EQ            | 14%    |
+| Flanger       | 18%    |
+| Fuzz          | 24%    |
+| Overdrive     | 24%    |
+| Phaser        | 30%    |
+| Preamp        | 52%    |
 | Reverb        | 55%    |
-| Speaker Sim   | 32%    |
-| Tremolo       | 4%     |
+| Speaker Sim   | 25%    |
+| Tremolo       | 5%     |
 | Vibrato       | WIP    |
 
-> **Note:** All effects are processed on left / right channel separately, making them fully stereo.
-> Actual performace allows the Reveb and Delay to run simultaneously!
+> **Note:** Figures above are with common effects (overdrive, preamp, etc..) processed in mono.
+> All effects can be processed as fully stereo by chaging the STEREO definition in the main.c file.
+> Actual performace allows the Reveb and Delay to run simultaneously depending on the sample buffer size!
 ---
 
 ## 🖥️ User Interface Overview
 
 - Parameter abbreviation display with full name and value popup on change.
 - Encoder-controlled effect slot assignment and navigation.
-- Tap-tempo display and LED blink feedback for modulation or delays.
+- LED blink feedback for modulation or delays.
 - Footswitch toggling per effect slot, with LED status indication.
 - VU meter visualizing signal levels or compressor gain reduction in real time.
+- Delay UI with time settings in [ms] or tap-tempo with selectable fractions.
 
 ---
 
@@ -131,7 +134,7 @@ The firmware architecture is modular, supporting multiple effects that can be st
 - **Expression pedals:** 2 inputs, configurable.
 - **❗NOTE:** Inputs are not attenuated and will clip with high-output pickups. The ADC has an input RC filter on-board that can be replaced by a ~100k series resistance to provide ~2x attenuation.
 
-> **Later versions:**  PCM3060 versions are work-in-progress and have not yet been fully tested!. The concept was proven on a breadboard (I2S only) without changes to the software.
+> **Later versions:**  PCM3060 version are have not yet been fully tested!. The concept was proven on a different PCB design without any changes to the software. ALthough, I did not test this PCB design specificaly, it should work perfectly fine.
 
 ---
 
