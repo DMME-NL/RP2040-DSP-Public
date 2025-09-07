@@ -35,6 +35,10 @@
 #include "hardware/flash.h"
 #include "hardware/sync.h"
 
+
+// ----------------------- Check settings exist ----------------------------
+#define SETTINGS_MAGIC 0x53455430u /* "SET0" */
+
 // --------------------------- Config / layout --------------------------------
 
 // End of firmware image in XIP space (provided by SDK/linker)
@@ -105,7 +109,7 @@ const uint16_t defaultPreampPotValue[NUM_PREAMPS][NUM_FUNC_POTS] = {
     { 2000, 2000, 2000, 2000, 2000, 2000 },   // 2 MARSHALL
     { 2000, 2000, 2000, 2000, 2000, 2000 },   // 3 SOLDANO
 };
-const uint8_t  defaultSelectedEffects[3] = {9, 2, 10};
+const uint8_t  defaultSelectedEffects[3] = {1, 2, 10};
 const uint8_t  default_led_state_const   = 0x04;
 
 // defaults (right after defaultSelectedEffects/default_led_state)
@@ -117,8 +121,9 @@ const bool default_tap_tempo_active_r = false;
 // ------------------------------ Record type ----------------------------------
 
 typedef struct {
-    uint32_t seq;                        // monotonically increasing
-    uint32_t crc;                        // checksum excluding 'crc' bytes
+    uint32_t magic;                     // must be SETTINGS_MAGIC
+    uint32_t seq;                       // monotonically increasing, start at 1
+    uint32_t crc;                       // checksum excluding 'crc' bytes
     uint16_t pot[NUM_EFFECTS][NUM_FUNC_POTS];
     uint16_t preamp[NUM_PREAMPS][NUM_FUNC_POTS];
     uint8_t  selectedEffects[3];
@@ -152,6 +157,13 @@ static inline uint32_t settings_crc(const SettingsRecord* rec) {
     return s;
 }
 
+// 2) Validate: crc ok AND magic ok AND seq != 0 / 0xFFFFFFFF
+static inline bool slot_valid(const SettingsRecord* r) {
+    if (r->magic != SETTINGS_MAGIC) return false;
+    if (r->seq == 0 || r->seq == 0xFFFFFFFFu) return false;
+    return r->crc == settings_crc(r);
+}
+
 // -------------------------- Flash view helpers --------------------------------
 
 static inline const uint8_t* settings_flash_base(void) {
@@ -167,11 +179,8 @@ static inline const SettingsRecord* find_latest_record(uint32_t* out_max_seq) {
     const SettingsRecord* best = NULL;
     for (int i = 0; i < (int)SETTINGS_NUM_SLOTS; ++i) {
         const SettingsRecord* r = slot_ptr(i);
-        if (r->crc == settings_crc(r)) {
-            if (r->seq >= max_seq) { // >= so last wins on ties
-                max_seq = r->seq;
-                best = r;
-            }
+        if (slot_valid(r)) {
+            if (r->seq >= max_seq) { max_seq = r->seq; best = r; }
         }
     }
     if (out_max_seq) *out_max_seq = max_seq;
@@ -184,15 +193,12 @@ static inline void plan_next_slot(int* out_slot_index, bool* out_need_erase) {
     int last_slot = -1;
     for (int i = 0; i < (int)SETTINGS_NUM_SLOTS; ++i) {
         const SettingsRecord* r = slot_ptr(i);
-        if (r->crc == settings_crc(r)) {
-            if (r->seq >= max_seq) {
-                max_seq = r->seq;
-                last_slot = i;
-            }
+        if (slot_valid(r)) {
+            if (r->seq >= max_seq) { max_seq = r->seq; last_slot = i; }
         }
     }
     int next = (last_slot < 0) ? 0 : ((last_slot + 1) % (int)SETTINGS_NUM_SLOTS);
-    bool erase = (next == 0); // wrap → erase the whole reserved area
+    bool erase = (next == 0);
     *out_slot_index = next;
     *out_need_erase = erase;
 }
@@ -230,21 +236,18 @@ static inline bool load_settings_from_flash(SettingsRecord* out) {
 
 // Journaled save (prepares image, then commits)
 static inline void save_settings_to_flash(const SettingsRecord* rec_in) {
-    int  slot_index;
-    bool need_erase;
+    int  slot_index; bool need_erase;
     plan_next_slot(&slot_index, &need_erase);
 
     SettingsRecord tmp = *rec_in;
     uint32_t max_seq = 0; (void)find_latest_record(&max_seq);
-    tmp.seq = max_seq + 1;
-    tmp.crc = settings_crc(&tmp);
+    tmp.magic = SETTINGS_MAGIC;
+    tmp.seq   = max_seq + 1;            // first write becomes 1
+    tmp.crc   = settings_crc(&tmp);
 
-    // Build one slot image (pad to slot size with 0xFF)
     uint8_t slot_image[SETTINGS_SLOT_SIZE];
     memset(slot_image, 0xFF, sizeof(slot_image));
     memcpy(slot_image, &tmp, sizeof(tmp));
-
-    // Do the critical section (erase/program) from SRAM
     settings_flash_commit(slot_index, slot_image, need_erase);
 }
 

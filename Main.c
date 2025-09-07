@@ -264,7 +264,7 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
             compressor_process_block(in_l, in_r, frames, STEREO); break;
 
         case DELAY_EFFECT_INDEX:
-            delay_process_block(in_l, in_r, frames, selected_delay_mode); break;
+            delay_process_block(in_l, in_r, frames, selected_delay_mode, true); break;
 
         case DS_EFFECT_INDEX:
             distortion_process_block(in_l, in_r, frames, STEREO); break;
@@ -298,7 +298,7 @@ void process_selected_effect_block(int slot, int32_t* in_l, int32_t* in_r, size_
             } break;
 
         case REVB_EFFECT_INDEX:
-            reverb_process_block(in_l, in_r, frames); break;
+            reverb_process_block(in_l, in_r, frames, true); break;
 
         case CAB_SIM_EFFECT_INDEX:
             speaker_sim_process_block(in_l, in_r, frames, STEREO); break;

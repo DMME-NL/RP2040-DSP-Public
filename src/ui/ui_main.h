@@ -380,9 +380,6 @@ void drawDelayModeMenu(int selectedIndex) {
 // === UI - Chorus Mode Screen ================================================
 // ============================================================================
 
-// no need to include chorus.h
-extern volatile int8_t ui_chorus_mode_pending;
-
 void drawChorusModeMenu(int selectedIndex) {
     static int last_selected = -1;
 
@@ -404,8 +401,7 @@ void drawChorusModeMenu(int selectedIndex) {
 
         if (i == selectedIndex) {
             if (selectedIndex != last_selected) {
-                selected_chorus_mode = selectedIndex;          // persist
-                ui_chorus_mode_pending = (int8_t)selectedIndex; // signal DSP
+                selected_chorus_mode = selectedIndex;
                 last_selected = selectedIndex;
             }
             SSD1306_FillRect(0, y, 128, rowH, 1);

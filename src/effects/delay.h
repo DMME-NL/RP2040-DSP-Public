@@ -145,7 +145,11 @@ static inline void clear_delay_memory(void) {
 }
 
 // === Main process (sample-based) ===
-static inline void process_audio_delay_sample(int32_t* inout_l, int32_t* inout_r, DelayMode mode) {
+static inline void process_audio_delay_sample(int32_t* inout_l, int32_t* inout_r, DelayMode mode, bool tails_only) {
+
+    int32_t dryL = *inout_l;
+    int32_t dryR = *inout_r;
+
     // === Compute block info ===
     uint32_t block_idx_l = spi_read_index_l / BLOCK_SIZE;
     uint32_t offset_l    = spi_read_index_l % BLOCK_SIZE;
@@ -171,36 +175,47 @@ static inline void process_audio_delay_sample(int32_t* inout_l, int32_t* inout_r
         case DELAY_MODE_PARALLEL:
             fb_l = multiply_q16(delayed_l, delay_feedback_q16);
             fb_r = multiply_q16(delayed_r, delay_feedback_q16);
-            pre_lpf_l = *inout_l + fb_l;
-            pre_lpf_r = *inout_r + fb_r;
+
+            int32_t write_in_l = tails_only ? 0 : dryL;
+            int32_t write_in_r = tails_only ? 0 : dryR;
+
+            pre_lpf_l = write_in_l + fb_l;
+            pre_lpf_r = write_in_r + fb_r;
             break;
 
         case DELAY_MODE_CROSS:
             fb_l = multiply_q16(delayed_r, delay_feedback_q16);  // Right feeds into Left
             fb_r = multiply_q16(delayed_l, delay_feedback_q16);  // Left feeds into Right
 
-            pre_lpf_l = *inout_l + fb_l;
-            pre_lpf_r = *inout_r + fb_r;
+            write_in_l = tails_only ? 0 : dryL;
+            write_in_r = tails_only ? 0 : dryR;
+
+            pre_lpf_l = write_in_l + fb_l;
+            pre_lpf_r = write_in_r + fb_r;
             break;
         
         case DELAY_MODE_MIXED:
             fb_l = multiply_q16((delayed_l + delayed_r) >> 1, delay_feedback_q16);  // Mixed feedback
             fb_r = fb_l;  // Same value for both
-            pre_lpf_l = *inout_l + fb_l;
-            pre_lpf_r = *inout_r + fb_r;
+            write_in_l = tails_only ? 0 : dryL;
+            write_in_r = tails_only ? 0 : dryR;
+
+            pre_lpf_l = write_in_l + fb_l;
+            pre_lpf_r = write_in_r + fb_r;
             break;
 
         case DELAY_MODE_PINGPONG:
-            int32_t mono_input = (*inout_l >> 1) + (*inout_r >> 1);
+            int32_t mono_input = (dryL >> 1) + (dryR >> 1);
+            int32_t inject_mono = tails_only ? 0 : mono_input;
 
             int32_t fb_l = multiply_q16(delayed_r, delay_feedback_q16);
-            int32_t pre_lpf_l = mono_input + fb_l;
+            int32_t pre_lpf_l = inject_mono + fb_l;
             lpf_state_l += multiply_q16((pre_lpf_l - lpf_state_l), lpf_alpha_q16);
             int32_t to_store_l = lpf_state_l;
             write_block_l[write_block_pos_l++] = to_store_l;
 
             int32_t fb_r = multiply_q16(delayed_l, delay_feedback_q16);
-            int32_t pre_lpf_r = fb_r;
+            int32_t pre_lpf_r = fb_r; // right stays feedback only in ping-pong
             lpf_state_r += multiply_q16((pre_lpf_r - lpf_state_r), lpf_alpha_q16);
             int32_t to_store_r = lpf_state_r;
             write_block_r[write_block_pos_r++] = to_store_r;
@@ -219,10 +234,25 @@ static inline void process_audio_delay_sample(int32_t* inout_l, int32_t* inout_r
             }
 
             // === Output mix ===
-            *inout_l = multiply_q16(*inout_l, delay_dry_q16) + multiply_q16(delayed_l, delay_mix_q16);
-            *inout_r = multiply_q16(*inout_r, delay_dry_q16) + multiply_q16(delayed_r, delay_mix_q16);
-            *inout_l = multiply_q16(*inout_l, volume_gain_q16);
-            *inout_r = multiply_q16(*inout_r, volume_gain_q16);
+            if (!tails_only) {
+                // Normal enabled: your existing dry/wet law
+                int32_t outL = multiply_q16(dryL, delay_dry_q16) + multiply_q16(delayed_l, delay_mix_q16);
+                int32_t outR = multiply_q16(dryR, delay_dry_q16) + multiply_q16(delayed_r, delay_mix_q16);
+                *inout_l = multiply_q16(outL, volume_gain_q16);
+                *inout_r = multiply_q16(outR, volume_gain_q16);
+            } else {
+                // Bypass with trails: dry at unity + wet * mix * volume
+                int32_t wetL = multiply_q16(multiply_q16(delayed_l, delay_mix_q16), volume_gain_q16);
+                int32_t wetR = multiply_q16(multiply_q16(delayed_r, delay_mix_q16), volume_gain_q16);
+
+                int64_t sumL = (int64_t)dryL + (int64_t)wetL;
+                int64_t sumR = (int64_t)dryR + (int64_t)wetR;
+                if (sumL > INT32_MAX) sumL = INT32_MAX; if (sumL < INT32_MIN) sumL = INT32_MIN;
+                if (sumR > INT32_MAX) sumR = INT32_MAX; if (sumR < INT32_MIN) sumR = INT32_MIN;
+
+                *inout_l = clamp24((int32_t)sumL);
+                *inout_r = clamp24((int32_t)sumR);
+            }
 
             // === Update delay indices ===
             spi_write_index_l = (spi_write_index_l + 1) % MAX_DELAY_SAMPLES;
@@ -331,9 +361,10 @@ static inline void update_delay_params_from_pots(int changed_pot) {
     load_delay_parms_from_memory();
 }
 
-void delay_process_block(int32_t* in_l, int32_t* in_r, size_t frames, DelayMode mode) {
+void delay_process_block(int32_t* in_l, int32_t* in_r, size_t frames, DelayMode mode, bool enabled) {
+    const bool tails_only = !enabled;
     for (size_t i = 0; i < frames; i++) {
-        process_audio_delay_sample(&in_l[i], &in_r[i], mode);
+        process_audio_delay_sample(&in_l[i], &in_r[i], mode, tails_only);
     }
 }
 
