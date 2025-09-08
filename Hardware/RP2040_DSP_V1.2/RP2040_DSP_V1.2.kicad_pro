@@ -910,7 +910,7 @@
       "plot": "RP2040_DSP_Gerbers/",
       "pos_files": "",
       "specctra_dsn": "",
-      "step": "RP2040_DSP_Main.step",
+      "step": "../Enclosure/RP2040_DSP_V1.2_Main.step",
       "svg": "",
       "vrml": ""
     },
