@@ -132,7 +132,9 @@ If you do not want to use PCBway, or refuse to give me the please of a small 10%
 
 PCBway profile: https://www.pcbway.com/project/member/?bmbno=88DFECEC-9511-40
 
-Mainboard:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Mainboard_30e99e7d.html
+Mainboard V1.2:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Mainboard_30e99e7d.html
+
+Mainboard V2.1:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Mainboard_V2_1_08d54258.html
 
 Daughterboard:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Daughterboard_25cda6b7.html
 
@@ -145,7 +147,7 @@ Daughterboard:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_
 
 ❗NOTE: PCM1808 inputs are not attenuated and will clip with high-output pickups. The ADC has an input RC filter on-board that can be replaced by a ~100k series resistance to provide ~2x attenuation.
 
-> **Later versions:**  PCM3060 version are have not yet been fully tested!. The concept was proven on a different PCB design without any changes to the software. Although, I did not test this PCB design specificaly, it should work perfectly fine.
+> **Later versions:**  PCM3060 version are have not yet been fully tested!. The concept was proven on a different PCB design and identical schematic - without any changes to the software. Although, I did not test this PCB design specificaly, it should work perfectly fine.
 
 ---
 
