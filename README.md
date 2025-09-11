@@ -124,7 +124,17 @@ The firmware architecture is modular, supporting multiple effects that can be st
 
 ## 🔧 Hardware Overview
 
-> Version 1.0 Prototype
+> Version 1.2
+
+This design can be ordered directly from PCBWay, including assembly of the SMD components.
+See the hardware folders for a complete bill of materials (ibom.html) that also includes all the modules and THT parts. 
+If you do not want to use PCBway, or refuse to give me the please of a small 10% commision via their services; the KiCAD project, gerbers, and BOM are also located in this repository.
+
+PCBway profile: https://www.pcbway.com/project/member/?bmbno=88DFECEC-9511-40
+
+Mainboard:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Mainboard_30e99e7d.html
+
+Daughterboard:  https://www.pcbway.com/project/shareproject/RP2040_Multi_effect_Pedal_Daughterboard_25cda6b7.html
 
 - **ADC:** PCM1808 stereo ADC module.
 - **DAC:** PCM5102 stereo DAC module.
@@ -132,9 +142,10 @@ The firmware architecture is modular, supporting multiple effects that can be st
 - **Form factor:** Designed for Hammond 1950DD enclosure.
 - **Input voltage:** 9–12 V DC.
 - **Expression pedals:** 2 inputs, configurable.
-- **❗NOTE:** Inputs are not attenuated and will clip with high-output pickups. The ADC has an input RC filter on-board that can be replaced by a ~100k series resistance to provide ~2x attenuation.
 
-> **Later versions:**  PCM3060 version are have not yet been fully tested!. The concept was proven on a different PCB design without any changes to the software. ALthough, I did not test this PCB design specificaly, it should work perfectly fine.
+❗NOTE: PCM1808 inputs are not attenuated and will clip with high-output pickups. The ADC has an input RC filter on-board that can be replaced by a ~100k series resistance to provide ~2x attenuation.
+
+> **Later versions:**  PCM3060 version are have not yet been fully tested!. The concept was proven on a different PCB design without any changes to the software. Although, I did not test this PCB design specificaly, it should work perfectly fine.
 
 ---
 
