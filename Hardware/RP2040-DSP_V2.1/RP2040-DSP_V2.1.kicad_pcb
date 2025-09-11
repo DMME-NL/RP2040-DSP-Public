@@ -120,7 +120,7 @@
 			(mirror no)
 			(drillshape 0)
 			(scaleselection 1)
-			(outputdirectory "RP2040_DSP_Gerbers/")
+			(outputdirectory "Manufacturing/V2.1_Daughterboard/")
 		)
 	)
 	(net 0 "")
