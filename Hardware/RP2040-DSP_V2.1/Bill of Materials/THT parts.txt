@@ -1,0 +1,27 @@
+RP2040 Zero:
+https://nl.aliexpress.com/item/1005006865919374.html
+
+128x64_OLED:
+https://nl.aliexpress.com/item/1005006262908701.html
+
+4N36_DIP-6_W7.62mm:
+https://nl.aliexpress.com/item/1005007501324743.html
+
+Potentiometer_Alpha_RD902F-40-00D:
+https://nl.aliexpress.com/item/1005008575940833.html
+
+Potentiometer_Alpha_RD901F-40-00D:
+https://nl.aliexpress.com/item/1005005661105692.html
+
+RotaryEncoder_Alps_EC11:
+https://nl.aliexpress.com/item/4000669429876.html
+
+Jack 6.35mm Horizontal NYS215:
+https://nl.aliexpress.com/item/32963629992.html
+
+IDC-Header_2x08_P2.54mm_Vertical	
+https://nl.aliexpress.com/item/1005005963522730.html
+
+SW_DIP_SPSTx04:
+https://nl.aliexpress.com/item/10000004737395.html
+
