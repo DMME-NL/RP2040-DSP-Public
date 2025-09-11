@@ -5,17 +5,17 @@
       "Application": "Pcbnew",
       "Version": "9.0.3"
     },
-    "CreationDate": "2025-09-08T10:31:57+02:00"
+    "CreationDate": "2025-09-11T09:39:14+02:00"
   },
   "GeneralSpecs": {
     "ProjectId": {
-      "Name": "RP2040_DSP",
-      "GUID": "52503230-3430-45f4-9453-502e6b696361",
+      "Name": "RP2040_DSP_V1.2",
+      "GUID": "52503230-3430-45f4-9453-505f56312e32",
       "Revision": "V1.2"
     },
     "Size": {
-      "X": 168.75,
-      "Y": 136.65
+      "X": 166.2467,
+      "Y": 92.65
     },
     "LayerNumber": 2,
     "BoardThickness": 1.2,
@@ -35,47 +35,47 @@
   ],
   "FilesAttributes": [
     {
-      "Path": "RP2040_DSP-Top Layer.gbr",
+      "Path": "RP2040_DSP_V1.2-Top Layer.gbr",
       "FileFunction": "Copper,L1,Top",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Bottom Layer.gbr",
+      "Path": "RP2040_DSP_V1.2-Bottom Layer.gbr",
       "FileFunction": "Copper,L2,Bot",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Top Paste.gbr",
+      "Path": "RP2040_DSP_V1.2-Top Paste.gbr",
       "FileFunction": "SolderPaste,Top",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Bottom Paste.gbr",
+      "Path": "RP2040_DSP_V1.2-Bottom Paste.gbr",
       "FileFunction": "SolderPaste,Bot",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Top Silkscreen.gbr",
+      "Path": "RP2040_DSP_V1.2-Top Silkscreen.gbr",
       "FileFunction": "Legend,Top",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Bottom Silkscreen.gbr",
+      "Path": "RP2040_DSP_V1.2-Bottom Silkscreen.gbr",
       "FileFunction": "Legend,Bot",
       "FilePolarity": "Positive"
     },
     {
-      "Path": "RP2040_DSP-Top Soldermask.gbr",
+      "Path": "RP2040_DSP_V1.2-Top Soldermask.gbr",
       "FileFunction": "SolderMask,Top",
       "FilePolarity": "Negative"
     },
     {
-      "Path": "RP2040_DSP-Bottom Soldermask.gbr",
+      "Path": "RP2040_DSP_V1.2-Bottom Soldermask.gbr",
       "FileFunction": "SolderMask,Bot",
       "FilePolarity": "Negative"
     },
     {
-      "Path": "RP2040_DSP-Edge_Cuts.gbr",
+      "Path": "RP2040_DSP_V1.2-Edge_Cuts.gbr",
       "FileFunction": "Profile",
       "FilePolarity": "Positive"
     }

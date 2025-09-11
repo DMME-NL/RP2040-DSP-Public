@@ -907,10 +907,10 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "RP2040_DSP_Gerbers/",
-      "pos_files": "",
+      "plot": "Manufacturing/V1.2_Daughterboard_Gerbers/",
+      "pos_files": "Manufacturing/V1.2_Daughterboard_Gerbers/",
       "specctra_dsn": "",
-      "step": "../Enclosure/RP2040_DSP_V1.2_Main.step",
+      "step": "RP2040_DSP_Main.step",
       "svg": "",
       "vrml": ""
     },
